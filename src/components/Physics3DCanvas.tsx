@@ -1195,25 +1195,10 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         />
       ))}
 
-      {/* Combo Display */}
-      <ComboDisplay
-        show={comboDisplay.show}
-        text={comboDisplay.text}
-        scale={comboDisplay.scale}
-        comboCount={comboCount}
-        multiplier={comboMultiplier}
-      />
-
       {/* Completion Celebration */}
       <CompletionCelebration
         enabled={completionCelebration.enabled}
         onComplete={() => setCompletionCelebration(prev => ({ ...prev, enabled: false }))}
-      />
-
-      {/* Perfect Run Indicator */}
-      <PerfectRunIndicator
-        active={perfectRun.active}
-        flawlessHits={perfectRun.flawlessHits}
       />
 
       {/* Atmosphere particles - reduced for performance */}
@@ -1640,60 +1625,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               </IconButton>
             </Tooltip>
           ))}
-        </MUIBox>
-      </MUIBox>
-
-      {/* Session Stats Display */}
-      <MUIBox
-        sx={{
-          position: 'absolute',
-          bottom: 20,
-          left: 20,
-          background: '#000000',
-          border: '1px solid #333333',
-          borderRadius: 1,
-          padding: 1.5,
-          color: '#FFFFFF',
-          minWidth: 120,
-          opacity: 0.8
-        }}
-        role="status"
-        aria-live="polite"
-      >
-        <Typography variant="caption" sx={{
-          display: 'block',
-          color: '#666666',
-          mb: 1,
-          fontSize: '0.7rem',
-          letterSpacing: '0.15em'
-        }}>
-          SESSION
-        </Typography>
-        <MUIBox sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
-              ○
-            </Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
-              {displayStats.totalScore}
-            </Typography>
-          </MUIBox>
-          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
-              ◈
-            </Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
-              {displayStats.totalCollisions}
-            </Typography>
-          </MUIBox>
-          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
-              ❖
-            </Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
-              {displayStats.maxCombo}
-            </Typography>
-          </MUIBox>
         </MUIBox>
       </MUIBox>
 
