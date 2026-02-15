@@ -1123,39 +1123,45 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
       {divineLightActive && (
         <>
           <spotLight
-            position={[0, 25, 0]}
-            angle={1.0}
-            penumbra={0.3}
-            intensity={10.0}
+            position={[0, 30, 0]}
+            angle={1.5}
+            penumbra={0.2}
+            intensity={20.0}
             color="#FFD700" // Golden light
             castShadow
             shadow-mapSize={[1024, 1024]}
           />
           <pointLight
-            position={[-8, 20, -8]}
-            intensity={5.0}
+            position={[-12, 25, -12]}
+            intensity={8.0}
             color="#FF6B6B" // Divine red
-            distance={50}
+            distance={80}
           />
           <pointLight
-            position={[8, 20, 8]}
-            intensity={5.0}
+            position={[12, 25, 12]}
+            intensity={8.0}
             color="#4ECDC4" // Divine cyan
-            distance={50}
+            distance={80}
           />
           <pointLight
-            position={[-8, 20, 8]}
-            intensity={5.0}
+            position={[-12, 25, 12]}
+            intensity={8.0}
             color="#A855F7" // Divine purple
-            distance={50}
+            distance={80}
           />
           <pointLight
-            position={[8, 20, -8]}
-            intensity={5.0}
+            position={[12, 25, -12]}
+            intensity={8.0}
             color="#F472B6" // Divine pink
-            distance={50}
+            distance={80}
           />
-          <ambientLight intensity={2.0} color="#FFD700" />
+          <pointLight
+            position={[0, 20, 0]}
+            intensity={5.0}
+            color="#FFD700" // Center golden fill
+            distance={60}
+          />
+          <ambientLight intensity={3.0} color="#FFD700" />
         </>
       )}
 
