@@ -126,22 +126,6 @@ const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: 
           />
         </Text>
       )}
-      {comboCount > 1 && (
-        <Text
-          fontSize={0.8}
-          color="#FFFFFF"
-          anchorX="center"
-          anchorY="middle"
-          position={[0, -1.5, 0]}
-        >
-          {`${comboCount} hits`}
-          <meshBasicMaterial
-            color="#FFFFFF"
-            transparent
-            opacity={0.7}
-          />
-        </Text>
-      )}
     </group>
   );
 });
