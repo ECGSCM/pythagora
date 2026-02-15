@@ -1416,12 +1416,20 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         </MUIBox>
       )}
 
-      {/* Floating Controls */}
+      {/* Right Panel Container - Controls and Modules */}
       <MUIBox
         sx={{
           position: 'absolute',
           top: 20,
           right: 20,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2
+        }}
+      >
+        {/* Floating Controls */}
+        <MUIBox
+        sx={{
           display: 'flex',
           gap: 0.5,
           flexDirection: 'column'
@@ -1536,9 +1544,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       {/* Module Selector - Sacred Geometry Buttons */}
       <MUIBox
         sx={{
-          position: 'absolute',
-          bottom: 20,
-          right: 20,
           background: '#000000',
           border: '1px solid #333333',
           borderRadius: 1,
@@ -1626,39 +1631,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
           ))}
         </MUIBox>
       </MUIBox>
-
-      {/* Selected Module Type Indicator */}
-      <MUIBox
-        sx={{
-          position: 'absolute',
-          bottom: 20,
-          right: 20,
-          background: '#000000',
-          border: '1px solid #333333',
-          borderRadius: 1,
-          padding: 1.5,
-          color: '#FFFFFF',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1
-        }}
-        role="status"
-        aria-live="polite"
-      >
-        <MUIBox sx={{
-          fontSize: '0.75rem',
-          color: '#CCCCCC',
-          letterSpacing: '0.1em'
-        }}>
-          {selectedNodeType === 'marble' ? '◉' :
-           selectedNodeType === 'ramp' ? '△' :
-           selectedNodeType === 'bumper' ? '◉' :
-           selectedNodeType === 'chime' ? '✧' :
-           selectedNodeType === 'spinner' ? '∞' :
-           selectedNodeType === 'funnel' ? '◈' :
-           selectedNodeType === 'seesaw' ? '∞' :
-           selectedNodeType === 'bell' ? '❖' : selectedNodeType}
-        </MUIBox>
       </MUIBox>
     </MUIBox>
   );
