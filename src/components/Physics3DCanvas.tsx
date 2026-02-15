@@ -596,7 +596,8 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
 
   // Add collision detection for sound
   useEffect(() => {
-    if (ref.current && ref.current.api) {
+    const currentRef = ref.current as any;
+    if (currentRef && currentRef.api) {
       const handleCollision = (e: any) => {
         console.log('Spinner collision!');
         if (onCollide) {
@@ -609,9 +610,9 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
         }
       };
 
-      const collisionHandler = ref.current.api.addEventListener('collide', handleCollision);
+      const collisionHandler = currentRef.api.addEventListener('collide', handleCollision);
       return () => {
-        ref.current?.api?.removeEventListener('collide', collisionHandler);
+        currentRef?.api?.removeEventListener('collide', collisionHandler);
       };
     }
   }, [nodeId, onCollide]);
@@ -1348,8 +1349,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               restitution: 0.7
             }}
             allowSleep={true} // Enable sleeping for static objects
-            sleepSpeedLimit={0.1} // Objects below this speed will sleep
-            sleepTimeLimit={0.5} // Time before object falls asleep
           >
             <Scene
               nodes={nodes}
@@ -1447,7 +1446,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label={isMuted ? "Unmute audio" : "Mute audio"}
           >
-            <Box sx={{ fontSize: 20 }}>{isMuted ? '◉' : '◎'}</Box>
+            <MUIBox sx={{ fontSize: 20 }}>{isMuted ? '◉' : '◎'}</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1468,7 +1467,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Enable short echo mode"
           >
-            <Box sx={{ fontSize: 16 }}>∿</Box>
+            <MUIBox sx={{ fontSize: 16 }}>∿</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1488,7 +1487,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Enable long echo mode"
           >
-            <Box sx={{ fontSize: 18 }}>∿∿</Box>
+            <MUIBox sx={{ fontSize: 18 }}>∿∿</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1508,7 +1507,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Disable echo"
           >
-            <Box sx={{ fontSize: 20 }}>○</Box>
+            <MUIBox sx={{ fontSize: 20 }}>○</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1529,7 +1528,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label={divineLightActive ? "Disable divine light" : "Enable divine light"}
           >
-            <Box sx={{ fontSize: 24, fontWeight: 'bold' }}>✦</Box>
+            <MUIBox sx={{ fontSize: 24, fontWeight: 'bold' }}>✦</MUIBox>
           </IconButton>
         </Tooltip>
       </MUIBox>
@@ -1603,14 +1602,14 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
                 aria-label={`Select ${module.name} module`}
                 aria-pressed={selectedNodeType === module.type}
               >
-                <Box sx={{
+                <MUIBox sx={{
                   fontSize: '1.4rem',
                   lineHeight: 1,
                   fontWeight: selectedNodeType === module.type ? 600 : 400,
                   height: 24
                 }}>
                   {module.symbol}
-                </Box>
+                </MUIBox>
                 <Typography
                   sx={{
                     fontSize: '0.08rem !important',
