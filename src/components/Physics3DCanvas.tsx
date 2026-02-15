@@ -1540,10 +1540,14 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
           </IconButton>
         </Tooltip>
       </MUIBox>
+      </MUIBox>
 
       {/* Module Selector - Sacred Geometry Buttons */}
       <MUIBox
         sx={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
           background: '#000000',
           border: '1px solid #333333',
           borderRadius: 0.65,
@@ -1630,7 +1634,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             </Tooltip>
           ))}
         </MUIBox>
-      </MUIBox>
       </MUIBox>
     </MUIBox>
   );
