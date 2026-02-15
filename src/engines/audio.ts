@@ -1303,52 +1303,76 @@ export class AudioEngine {
       return; // Skip if too many sounds active
     }
 
-    // GEOMETRIC GLISSANDO - completely random pitch and slide each time
-    const startFreq = this.randomFreq(100, 400);
-    const endFreq = this.randomFreq(400, 1200);
-    const osc = new Tone.Oscillator(startFreq, 'sawtooth');
+    // SACRED GEOMETRY SLIDE - harmonious pentatonic glissando
+    const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // C4, D4, E4, G4, A4, C5
+    const startIndex = Math.floor(Math.random() * (pentatonicScale.length - 1));
+    const endIndex = Math.min(startIndex + 2, pentatonicScale.length - 1);
+
+    const startFreq = pentatonicScale[startIndex];
+    const endFreq = pentatonicScale[endIndex] * 2; // Octave up for ascension effect
+
+    // Multiple layered oscillators for richness
+    const osc1 = new Tone.Oscillator(startFreq, 'sine');
+    const osc2 = new Tone.Oscillator(startFreq * 2.01, 'triangle'); // Slight detune
+    const osc3 = new Tone.Oscillator(startFreq * 0.5, 'sine'); // Sub octave
 
     const filter = new Tone.Filter({
-      frequency: this.randomFreq(2000, 6000),
+      frequency: 3000,
       type: 'lowpass',
-      Q: this.randomFreq(1, 4)
+      Q: 2
     });
 
-    // Pitch envelope for slide effect
+    // Pitch envelope for smooth ascent
     const pitchEnv = new Tone.FrequencyEnvelope({
-      attack: 0.05,
-      decay: 0.3,
-      sustain: 0.3,
-      release: 0.5,
+      attack: 0.1,
+      decay: 0.4,
+      sustain: 0.4,
+      release: 0.6,
       attackCurve: 'exponential',
       releaseCurve: 'exponential'
     });
 
-    pitchEnv.connect(osc.frequency);
+    pitchEnv.connect(osc1.frequency);
+    pitchEnv.connect(osc2.frequency);
+    pitchEnv.connect(osc3.frequency);
 
-    // PERFORMANCE: Shorter envelope for faster cleanup (same slide quality)
+    // LFO for subtle vibrato
+    const lfo = new Tone.LFO(5, 0, 10); // 5Hz vibrato
+    lfo.connect(osc1.detune);
+    lfo.connect(osc2.detune);
+    lfo.start();
+
+    // Envelope for smooth fade
     const env = new Tone.AmplitudeEnvelope({
-      attack: 0.05,
-      decay: 0.5,
-      sustain: 0.2,
-      release: 0.8
+      attack: 0.1,
+      decay: 0.6,
+      sustain: 0.3,
+      release: 1.0
     });
 
-    const gain = new Tone.Gain(0.4);
+    const gain = new Tone.Gain(0.3);
 
-    osc.connect(filter);
+    osc1.connect(filter);
+    osc2.connect(filter);
+    osc3.connect(filter);
     filter.connect(env);
     env.connect(gain);
     gain.connect(this.echoDelay);
 
-    osc.start();
-    pitchEnv.triggerAttackRelease(endFreq, '1s'); // Reduced from 2s
-    env.triggerAttackRelease('1.5s'); // Reduced from 3s
+    osc1.start();
+    osc2.start();
+    osc3.start();
 
-    // PERFORMANCE: Faster cleanup (2s instead of 4s)
+    pitchEnv.triggerAttackRelease(endFreq, '1.2s');
+    env.triggerAttackRelease('1.8s');
+
+    // PERFORMANCE: Cleanup after sound completes
     const timeoutId = setTimeout(() => {
       try {
-        osc.dispose();
+        lfo.dispose();
+        osc1.dispose();
+        osc2.dispose();
+        osc3.dispose();
         filter.dispose();
         pitchEnv.dispose();
         env.dispose();
@@ -1357,9 +1381,9 @@ export class AudioEngine {
       } catch (error) {
         // Ignore
       }
-    }, 2000);
+    }, 2500);
 
-    this.temporaryNodes.set('ramp', { nodes: [osc, filter, pitchEnv, env, gain], timeoutId });
+    this.temporaryNodes.set('ramp', { nodes: [lfo, osc1, osc2, osc3, filter, pitchEnv, env, gain], timeoutId });
   }
 
   private playSpiralEffect(): void {
