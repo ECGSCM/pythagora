@@ -46,6 +46,7 @@ export default defineConfig({
       }
     })
   ],
+  base: '/pythagora-synth/', // GitHub Pages base path
   build: {
     rollupOptions: {
       output: {
