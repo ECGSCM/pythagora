@@ -1303,31 +1303,33 @@ export class AudioEngine {
       return; // Skip if too many sounds active
     }
 
-    // SACRED GEOMETRY SLIDE - harmonious pentatonic glissando
+    // GLITCHY SINE SLIDE - digital artifacts with pure sine base
     const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // C4, D4, E4, G4, A4, C5
     const startIndex = Math.floor(Math.random() * (pentatonicScale.length - 1));
     const endIndex = Math.min(startIndex + 2, pentatonicScale.length - 1);
 
     const startFreq = pentatonicScale[startIndex];
-    const endFreq = pentatonicScale[endIndex] * 2; // Octave up for ascension effect
+    const endFreq = pentatonicScale[endIndex] * 2;
 
-    // Multiple layered oscillators for richness
+    // Multiple detuned sine oscillators for glitchy beating
     const osc1 = new Tone.Oscillator(startFreq, 'sine');
-    const osc2 = new Tone.Oscillator(startFreq * 2.01, 'triangle'); // Slight detune
-    const osc3 = new Tone.Oscillator(startFreq * 0.5, 'sine'); // Sub octave
+    const osc2 = new Tone.Oscillator(startFreq * 1.003, 'sine'); // Very close detune
+    const osc3 = new Tone.Oscillator(startFreq * 0.997, 'sine'); // Phase cancellation
+    const osc4 = new Tone.Oscillator(startFreq * 2.01, 'sine'); // Octave harmonic
 
+    // Bitcrusher-style filter
     const filter = new Tone.Filter({
-      frequency: 3000,
-      type: 'lowpass',
-      Q: 2
+      frequency: 800 + Math.random() * 400, // Random highpass for digital grit
+      type: 'highpass',
+      Q: 8 + Math.random() * 4 // Resonant peak for metallic edge
     });
 
-    // Pitch envelope for smooth ascent
+    // Aggressive pitch envelope with random jumps
     const pitchEnv = new Tone.FrequencyEnvelope({
-      attack: 0.1,
-      decay: 0.4,
-      sustain: 0.4,
-      release: 0.6,
+      attack: 0.01, // Very fast attack
+      decay: 0.2,
+      sustain: 0.1,
+      release: 0.3,
       attackCurve: 'exponential',
       releaseCurve: 'exponential'
     });
@@ -1335,55 +1337,77 @@ export class AudioEngine {
     pitchEnv.connect(osc1.frequency);
     pitchEnv.connect(osc2.frequency);
     pitchEnv.connect(osc3.frequency);
+    pitchEnv.connect(osc4.frequency);
 
-    // LFO for subtle vibrato
-    const lfo = new Tone.LFO(5, 0, 10); // 5Hz vibrato
+    // Fast LFO for warbling effect
+    const lfo = new Tone.LFO(15 + Math.random() * 10, -50, 50); // 15-25Hz warble
     lfo.connect(osc1.detune);
     lfo.connect(osc2.detune);
+    lfo.connect(osc3.detune);
     lfo.start();
 
-    // Envelope for smooth fade
-    const env = new Tone.AmplitudeEnvelope({
-      attack: 0.1,
-      decay: 0.6,
-      sustain: 0.3,
-      release: 1.0
+    // Stutter envelope for digital glitches
+    const stutterEnv = new Tone.AmplitudeEnvelope({
+      attack: 0.001,
+      decay: 0.05,
+      sustain: 0,
+      release: 0.05
     });
 
-    const gain = new Tone.Gain(0.3);
+    const gain = new Tone.Gain(0.4);
 
+    // Connect with slight random delay for phase offset
     osc1.connect(filter);
     osc2.connect(filter);
     osc3.connect(filter);
-    filter.connect(env);
-    env.connect(gain);
+    osc4.connect(filter);
+    filter.connect(stutterEnv);
+    stutterEnv.connect(gain);
     gain.connect(this.echoDelay);
 
     osc1.start();
     osc2.start();
     osc3.start();
+    osc4.start();
 
-    pitchEnv.triggerAttackRelease(endFreq, '1.2s');
-    env.triggerAttackRelease('1.8s');
+    // Trigger with stutter timing
+    const now = Tone.now();
+    pitchEnv.triggerAttackRelease(endFreq, '0.3s', now);
+    stutterEnv.triggerAttackRelease('0.1s', now);
+    stutterEnv.triggerAttackRelease('0.05s', now + 0.12);
+    stutterEnv.triggerAttackRelease('0.08s', now + 0.24);
+    stutterEnv.triggerAttackRelease('0.03s', now + 0.36);
 
-    // PERFORMANCE: Cleanup after sound completes
+    // Random frequency jump for glitch moment
+    setTimeout(() => {
+      if (Math.random() > 0.5) {
+        try {
+          osc1.frequency.setValueAtTime(endFreq * (1 + Math.random() * 0.1), Tone.now());
+        } catch (e) {
+          // Ignore
+        }
+      }
+    }, 100);
+
+    // PERFORMANCE: Fast cleanup
     const timeoutId = setTimeout(() => {
       try {
         lfo.dispose();
         osc1.dispose();
         osc2.dispose();
         osc3.dispose();
+        osc4.dispose();
         filter.dispose();
         pitchEnv.dispose();
-        env.dispose();
+        stutterEnv.dispose();
         gain.dispose();
         this.temporaryNodes.delete('ramp');
       } catch (error) {
         // Ignore
       }
-    }, 2500);
+    }, 1500);
 
-    this.temporaryNodes.set('ramp', { nodes: [lfo, osc1, osc2, osc3, filter, pitchEnv, env, gain], timeoutId });
+    this.temporaryNodes.set('ramp', { nodes: [lfo, osc1, osc2, osc3, osc4, filter, pitchEnv, stutterEnv, gain], timeoutId });
   }
 
   private playSpiralEffect(): void {
