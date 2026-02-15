@@ -1057,7 +1057,7 @@ export class AudioEngine {
     osc3.connect(filter);
     filter.connect(env);
     env.connect(gain);
-    gain.connect(this.masterCompressor);
+    gain.connect(this.echoDelay);
 
     osc1.start();
     osc2.start();
@@ -1126,7 +1126,7 @@ export class AudioEngine {
 
     filter.connect(env);
     env.connect(masterGain);
-    masterGain.connect(this.masterCompressor);
+    masterGain.connect(this.echoDelay);
 
     env.triggerAttackRelease('3s'); // Reduced from 8s
 
@@ -1192,7 +1192,7 @@ export class AudioEngine {
     osc.connect(filter);
     filter.connect(env);
     env.connect(gain);
-    gain.connect(this.masterCompressor);
+    gain.connect(this.echoDelay);
 
     osc.start();
     env.triggerAttackRelease('4s'); // Reduced from 10s
@@ -1276,7 +1276,7 @@ export class AudioEngine {
 
     chorus.connect(env);
     env.connect(masterGain);
-    masterGain.connect(this.masterCompressor);
+    masterGain.connect(this.echoDelay);
 
     env.triggerAttackRelease('3s'); // Reduced from 5s
 
@@ -1339,7 +1339,7 @@ export class AudioEngine {
     osc.connect(filter);
     filter.connect(env);
     env.connect(gain);
-    gain.connect(this.masterCompressor);
+    gain.connect(this.echoDelay);
 
     osc.start();
     pitchEnv.triggerAttackRelease(endFreq, '1s'); // Reduced from 2s
@@ -1401,7 +1401,7 @@ export class AudioEngine {
       }
     });
 
-    masterGain.connect(this.masterCompressor);
+    masterGain.connect(this.echoDelay);
 
     // PERFORMANCE: Faster cleanup (2s instead of 3s)
     const timeoutId = setTimeout(() => {
@@ -1454,7 +1454,7 @@ export class AudioEngine {
     osc3.connect(filter);
     filter.connect(env);
     env.connect(gain);
-    gain.connect(this.masterCompressor);
+    gain.connect(this.echoDelay);
 
     osc1.start();
     osc2.start();
