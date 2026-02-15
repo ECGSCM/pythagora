@@ -25,25 +25,24 @@ export class SynthBridge3D {
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
-    
+
     // Start Tone.js context on user interaction
     await Tone.start();
-    console.log('Tone.js started, audio context state:', Tone.context.state);
-    
+
     await this.audioEngine.start();
+
+    // Initialize ambient drone system for hypnotic background
+    this.audioEngine.initializeDrone();
+
     this.isInitialized = true;
   }
 
   triggerCollision(event: Collision3DEvent): void {
-    console.log('SynthBridge3D: Triggering collision for node:', event.nodeId, 'velocity:', event.velocity);
-    
     // Ensure audio context is running
     if (Tone.context.state === 'suspended') {
-      Tone.start().then(() => {
-        console.log('Audio context resumed');
-      });
+      Tone.start();
     }
-    
+
     // Trigger audio response
     this.audioEngine.triggerCollision({
       nodeId: event.nodeId,
@@ -51,7 +50,7 @@ export class SynthBridge3D {
       position: { x: event.position.x, y: event.position.y },
       timestamp: event.timestamp
     });
-    
+
     // Call external callback if provided
     this.onCollision?.(event);
   }
@@ -61,11 +60,11 @@ export class SynthBridge3D {
       // Create audio node for new module types
       if (['ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell', 'osc', 'filter', 'lfo', 'reverb', 'delay'].includes(node.type)) {
         const audioNode = this.audioEngine.createNode(node);
-        
+
         if (!audioNode) {
           return false;
         }
-        
+
         // Connect oscillators to master but don't start them automatically
         if (node.type === 'osc' && audioNode instanceof Tone.Oscillator) {
           audioNode.toDestination();
@@ -75,7 +74,6 @@ export class SynthBridge3D {
 
       return true;
     } catch (error) {
-      console.error('Failed to add node:', error);
       return false;
     }
   }
@@ -110,6 +108,46 @@ export class SynthBridge3D {
 
   stopHealthFrequency(): void {
     this.audioEngine.stopHealthFrequency();
+  }
+
+  // ==================== DRONE CONTROL ====================
+
+  /**
+   * Enable or disable the ambient drone system
+   */
+  setDroneEnabled(enabled: boolean): void {
+    this.audioEngine.setDroneEnabled(enabled);
+  }
+
+  /**
+   * Set the overall drone volume
+   * @param volume Volume in dB (-60 to 0)
+   */
+  setDroneVolume(volume: number): void {
+    this.audioEngine.setDroneVolume(volume);
+  }
+
+  /**
+   * Get current drone status
+   */
+  getDroneStatus(): { enabled: boolean; intensity: number } {
+    return this.audioEngine.getDroneStatus();
+  }
+
+  // ==================== HARMONY CONTROL ====================
+
+  /**
+   * Get collision history for pattern recognition
+   */
+  getCollisionHistory() {
+    return this.audioEngine.getCollisionHistory();
+  }
+
+  /**
+   * Reset harmonic progression to beginning
+   */
+  resetHarmony(): void {
+    this.audioEngine.resetHarmony();
   }
 
   loadPatch(nodes: PatchNode[]): void {

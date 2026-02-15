@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
   Environment,
@@ -16,7 +16,7 @@ import { Physics, useSphere, useBox, useCylinder, usePlane } from '@react-three/
 import { SynthBridge3D } from '../engines/synthBridge3D';
 import { PatchNode } from '../types/db.types';
 import { Box as MUIBox, IconButton, Tooltip, Typography } from '@mui/material';
-import { VolumeUp, VolumeOff } from '@mui/icons-material';
+import { VolumeUp, VolumeOff, GraphicEq, AccessTime } from '@mui/icons-material';
 import * as THREE from 'three';
 
 interface Physics3DCanvasProps {
@@ -27,9 +27,523 @@ interface Physics3DCanvasProps {
   selectedNodeType?: string;
 }
 
+// Ripple Effect Component for collisions
+interface RippleProps {
+  position: [number, number, number];
+  color?: string;
+  onComplete?: () => void;
+}
+
+const Ripple = React.memo(({ position, color = "#FF4757", onComplete }: RippleProps) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [life, setLife] = useState(1); // 1 to 0
+  const rippleDuration = 1.0; // seconds
+
+  useFrame((_state, delta) => {
+    const decay = delta / rippleDuration;
+    setLife(prev => {
+      const newLife = Math.max(0, prev - decay);
+      if (newLife <= 0 && onComplete) {
+        onComplete();
+      }
+      return newLife;
+    });
+
+    // Animate ripple expansion
+    if (meshRef.current) {
+      const scale = 1 + (1 - life) * 3; // Expand from 1x to 4x
+      meshRef.current.scale.set(scale, scale, scale);
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={position} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.1, 0.3, 32]} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={life * 0.6}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+});
+
+Ripple.displayName = 'Ripple';
+
+// Combo Display Component
+interface ComboDisplayProps {
+  show: boolean;
+  text: string;
+  scale: number;
+  comboCount: number;
+  multiplier: number;
+}
+
+const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: ComboDisplayProps) => {
+  const meshRef = useRef<THREE.Group>(null);
+
+  useFrame((_state, delta) => {
+    if (meshRef.current && show) {
+      // Animate scale pulse
+      meshRef.current.scale.setScalar(scale);
+      // Rotate slightly
+      meshRef.current.rotation.y += delta * 0.5;
+    }
+  });
+
+  if (!show && comboCount === 0) return null;
+
+  // Color based on multiplier
+  const colors = ['#FF4757', '#FFA502', '#FFDD59', '#00D2D3', '#5F27CD'];
+  const color = colors[Math.min(multiplier - 1, 4)];
+
+  return (
+    <group ref={meshRef} position={[0, 8, 0]}>
+      {show && (
+        <Text
+          fontSize={1.5}
+          color={color}
+          anchorX="center"
+          anchorY="middle"
+          position={[0, 0, 0]}
+        >
+          {text}
+          <meshStandardMaterial
+            color={color}
+            transparent
+            opacity={0.9}
+            emissive={color}
+            emissiveIntensity={0.5}
+          />
+        </Text>
+      )}
+      {comboCount > 1 && (
+        <Text
+          fontSize={0.8}
+          color="#FFFFFF"
+          anchorX="center"
+          anchorY="middle"
+          position={[0, -1.5, 0]}
+        >
+          {`${comboCount} hits`}
+          <meshBasicMaterial
+            color="#FFFFFF"
+            transparent
+            opacity={0.7}
+          />
+        </Text>
+      )}
+    </group>
+  );
+});
+
+ComboDisplay.displayName = 'ComboDisplay';
+
+// Rhythm Indicator Component
+const RhythmIndicator = React.memo(({ enabled, quality, suggestedDropTime }: {
+  enabled: boolean;
+  quality: number;
+  suggestedDropTime: number;
+}) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [pulse, setPulse] = useState(0);
+
+  useFrame(() => {
+    if (!enabled) return;
+
+    const now = Date.now();
+    const timeUntilDrop = suggestedDropTime - now;
+
+    // Pulse when approaching suggested drop time
+    if (timeUntilDrop > 0 && timeUntilDrop < 500) {
+      const intensity = 1 - (timeUntilDrop / 500);
+      setPulse(intensity);
+    } else {
+      setPulse(0);
+    }
+  });
+
+  if (!enabled) return null;
+
+  // Color based on rhythm quality
+  const color = quality > 0.8 ? '#00FF00' : quality > 0.5 ? '#FFFF00' : '#FF0000';
+
+  return (
+    <group position={[0, 12, 0]}>
+      {/* Rhythm quality ring */}
+      <mesh ref={meshRef}>
+        <torusGeometry args={[2, 0.1, 16, 100]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.5 + pulse * 0.5}
+          transparent
+          opacity={0.6 + pulse * 0.4}
+        />
+      </mesh>
+
+      {/* Quality indicator text */}
+      <Text
+        fontSize={0.5}
+        color={color}
+        anchorX="center"
+        anchorY="middle"
+        position={[0, 0, 0]}
+      >
+        {`Rhythm: ${Math.round(quality * 100)}%`}
+        <meshStandardMaterial
+          color={color}
+          transparent
+          opacity={0.8}
+        />
+      </Text>
+    </group>
+  );
+});
+
+RhythmIndicator.displayName = 'RhythmIndicator';
+
+// Camera Flow Component - Smooth camera follow with floating motion
+const CameraFlow = React.memo(({ marbles }: { marbles: any[] }) => {
+  const { camera } = useThree();
+  const [offset] = useState(new THREE.Vector3(0, 8, 12)); // Camera offset from target
+
+  useFrame((state, delta) => {
+    if (!camera || marbles.length === 0) return;
+
+    // Find the most recently added marble (last in array)
+    const activeMarble = marbles[marbles.length - 1];
+    if (!activeMarble) return;
+
+    // Get marble position (we'll use the initial position since we don't have live tracking)
+    const marblePos = new THREE.Vector3(
+      activeMarble.position[0],
+      activeMarble.position[1],
+      activeMarble.position[2]
+    );
+
+    // Add gentle floating motion (sine wave)
+    const time = state.clock.elapsedTime;
+    const floatOffset = new THREE.Vector3(
+      Math.sin(time * 0.3) * 2,
+      Math.cos(time * 0.2) * 1,
+      Math.sin(time * 0.25) * 2
+    );
+
+    // Calculate target camera position
+    const target = marblePos.clone().add(offset).add(floatOffset);
+
+    // Smooth camera movement (lerp)
+    const smoothFactor = 2 * delta; // Adjust for smoothness
+    camera.position.lerp(target, smoothFactor);
+
+    // Make camera look at marble
+    const lookAtTarget = marblePos.clone().add(new THREE.Vector3(0, 2, 0));
+    camera.lookAt(lookAtTarget);
+  });
+
+  return null; // This component doesn't render anything, it manipulates the camera directly
+});
+
+CameraFlow.displayName = 'CameraFlow';
+
+// Breathing Guide Component - Subtle breathing animation for meditative state
+const BreathingGuide = React.memo(({ enabled }: { enabled: boolean }) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    if (!enabled || !groupRef.current || !ringRef.current) return;
+
+    // Breathing cycle: 4 seconds in, 4 seconds out
+    const time = state.clock.elapsedTime;
+    const cycleDuration = 8; // 8 seconds total (4 in, 4 out)
+    const phase = (time % cycleDuration) / cycleDuration;
+
+    // Breathing curve: smooth in and out
+    let scale: number;
+    if (phase < 0.5) {
+      // Inhale (0-4 seconds)
+      const inhalePhase = phase * 2; // 0-1
+      scale = 1 + Math.sin(inhalePhase * Math.PI / 2) * 0.15; // Expand to 1.15x
+    } else {
+      // Exhale (4-8 seconds)
+      const exhalePhase = (phase - 0.5) * 2; // 0-1
+      scale = 1.15 - Math.sin(exhalePhase * Math.PI / 2) * 0.15; // Contract to 1x
+    }
+
+    // Apply scale to ring
+    ringRef.current.scale.setScalar(scale);
+
+    // Subtle rotation
+    groupRef.current.rotation.y += 0.001;
+  });
+
+  if (!enabled) return null;
+
+  return (
+    <group ref={groupRef} position={[0, 3, 0]}>
+      {/* Breathing ring */}
+      <mesh ref={ringRef}>
+        <torusGeometry args={[1.5, 0.05, 16, 100]} />
+        <meshStandardMaterial
+          color="#4ECDC4"
+          emissive="#4ECDC4"
+          emissiveIntensity={0.3}
+          transparent
+          opacity={0.4}
+        />
+      </mesh>
+
+      {/* Inner ring */}
+      <mesh>
+        <torusGeometry args={[1, 0.03, 16, 100]} />
+        <meshStandardMaterial
+          color="#4ECDC4"
+          emissive="#4ECDC4"
+          emissiveIntensity={0.2}
+          transparent
+          opacity={0.3}
+        />
+      </mesh>
+    </group>
+  );
+});
+
+BreathingGuide.displayName = 'BreathingGuide';
+
+// Completion Celebration Component
+const CompletionCelebration = React.memo(({ enabled, onComplete }: {
+  enabled: boolean;
+  onComplete: () => void;
+}) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const [progress, setProgress] = useState(0);
+
+  useFrame((_state, delta) => {
+    if (!enabled || !groupRef.current) return;
+
+    // Animate completion celebration
+    setProgress(prev => {
+      const newProgress = prev + delta * 0.5; // 2 second animation
+      if (newProgress >= 1) {
+        onComplete();
+        return 1;
+      }
+      return newProgress;
+    });
+
+    // Scale effect
+    const scale = 1 + Math.sin(progress * Math.PI) * 0.5;
+    groupRef.current.scale.setScalar(scale);
+
+    // Rotate effect
+    groupRef.current.rotation.y += delta * 2;
+  });
+
+  if (!enabled) return null;
+
+  return (
+    <group ref={groupRef} position={[0, 6, 0]}>
+      {/* Golden ring expanding */}
+      <mesh>
+        <torusGeometry args={[3, 0.2, 16, 100]} />
+        <meshStandardMaterial
+          color="#FFD700"
+          emissive="#FFD700"
+          emissiveIntensity={1}
+          transparent
+          opacity={1 - progress * 0.5}
+        />
+      </mesh>
+
+      {/* "COMPLETE!" text */}
+      <Text
+        fontSize={2}
+        color="#FFD700"
+        anchorX="center"
+        anchorY="middle"
+        position={[0, 1, 0]}
+      >
+        COMPLETE!
+        <meshStandardMaterial
+          color="#FFD700"
+          emissive="#FFD700"
+          emissiveIntensity={0.8}
+        />
+      </Text>
+    </group>
+  );
+});
+
+CompletionCelebration.displayName = 'CompletionCelebration';
+
+// Perfect Run Indicator
+const PerfectRunIndicator = React.memo(({ active, flawlessHits }: {
+  active: boolean;
+  flawlessHits: number;
+}) => {
+  const meshRef = useRef<THREE.Group>(null);
+
+  useFrame((_state, delta) => {
+    if (!active || !meshRef.current) return;
+
+    // Gentle rotation
+    meshRef.current.rotation.y += delta * 0.5;
+  });
+
+  if (!active) return null;
+
+  return (
+    <group ref={meshRef} position={[0, 10, 0]}>
+      {/* Perfect run crown/star */}
+      <mesh>
+        <octahedronGeometry args={[0.5, 0]} />
+        <meshStandardMaterial
+          color="#FFD700"
+          emissive="#FFD700"
+          emissiveIntensity={1}
+          metalness={1}
+          roughness={0}
+        />
+      </mesh>
+
+      {/* Text */}
+      <Text
+        fontSize={1.2}
+        color="#FFD700"
+        anchorX="center"
+        anchorY="middle"
+        position={[0, 1, 0]}
+      >
+        "PERFECT RUN!"
+        <meshStandardMaterial
+          color="#FFD700"
+          emissive="#FFD700"
+          emissiveIntensity={0.8}
+        />
+      </Text>
+
+      <Text
+        fontSize={0.6}
+        color="#FFFFFF"
+        anchorX="center"
+        anchorY="middle"
+        position={[0, -0.5, 0]}
+      >
+        {`${flawlessHits} flawless hits`}
+        <meshStandardMaterial
+          color="#FFFFFF"
+          transparent
+          opacity={0.8}
+        />
+      </Text>
+    </group>
+  );
+});
+
+PerfectRunIndicator.displayName = 'PerfectRunIndicator';
+
+// Particle Trail Component
+interface Particle {
+  position: [number, number, number];
+  life: number; // 0 to 1
+  velocity: [number, number, number];
+}
+
+const ParticleTrail = React.memo(({ marblePosition, color }: { marblePosition: THREE.Vector3, color: string }) => {
+  const [particles, setParticles] = useState<Particle[]>([]);
+  const maxParticles = 30;
+  const particleLifetime = 1.5; // seconds
+
+  useFrame((_state, delta) => {
+    if (!marblePosition) return;
+
+    // Add new particle at marble position with slight random offset
+    const newParticle: Particle = {
+      position: [
+        marblePosition.x + (Math.random() - 0.5) * 0.1,
+        marblePosition.y + (Math.random() - 0.5) * 0.1,
+        marblePosition.z + (Math.random() - 0.5) * 0.1
+      ],
+      life: 1,
+      velocity: [
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.02
+      ]
+    };
+
+    setParticles(prev => {
+      const updated = [...prev, newParticle]
+        .map(p => ({
+          ...p,
+          life: p.life - (delta / particleLifetime),
+          position: [
+            p.position[0] + p.velocity[0],
+            p.position[1] + p.velocity[1],
+            p.position[2] + p.velocity[2]
+          ] as [number, number, number]
+        }))
+        .filter(p => p.life > 0)
+        .slice(-maxParticles);
+      return updated;
+    });
+  });
+
+  const particlesRef = useRef<THREE.Points>(null);
+  const geometryRef = useRef<THREE.BufferGeometry>(null);
+
+  // Update particle geometry
+  useFrame(() => {
+    if (particlesRef.current && geometryRef.current && particles.length > 0) {
+      const positions = geometryRef.current.attributes.position.array as Float32Array;
+
+      particles.forEach((p, i) => {
+        positions[i * 3] = p.position[0];
+        positions[i * 3 + 1] = p.position[1];
+        positions[i * 3 + 2] = p.position[2];
+      });
+
+      geometryRef.current.attributes.position.needsUpdate = true;
+      geometryRef.current.setDrawRange(0, particles.length);
+    }
+  });
+
+  // Create geometry with max particle positions
+  const positions = new Float32Array(maxParticles * 3);
+
+  return (
+    <points ref={particlesRef}>
+      <bufferGeometry ref={geometryRef}>
+        <bufferAttribute
+          attach="attributes-position"
+          count={maxParticles}
+          array={positions}
+          itemSize={3}
+          args={[positions, 3]}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.08}
+        color={color}
+        transparent
+        opacity={0.8}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  );
+});
+
+ParticleTrail.displayName = 'ParticleTrail';
+
 // Enhanced Marble Component with trail effect
-const Marble = React.memo(({ position, onCollide }: any) => {
-  const [ref] = useSphere(() => ({
+const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
+  const [ref, api] = useSphere(() => ({
     mass: 1,
     position,
     args: [0.3],
@@ -50,6 +564,17 @@ const Marble = React.memo(({ position, onCollide }: any) => {
     }
   }));
 
+  // Track marble position for particle trail
+  const marblePosition = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+
+  // Subscribe to position updates (only once)
+  useEffect(() => {
+    const unsubscribe = api.position.subscribe((pos: [number, number, number]) => {
+      marblePosition.current.set(pos[0], pos[1], pos[2]);
+    });
+    return () => unsubscribe();
+  }, [api.position]);
+
   useFrame(() => {
     const mesh = ref.current;
     if (mesh) {
@@ -59,15 +584,25 @@ const Marble = React.memo(({ position, onCollide }: any) => {
   });
 
   return (
-    <Sphere ref={ref as any} args={[0.3, 32, 32]} castShadow>
-      <meshStandardMaterial
-        color="#FF4757"
-        metalness={0.9}
-        roughness={0.1}
-        emissive="#FF4757"
-        emissiveIntensity={0.3}
+    <group>
+      {/* Local glow light for the marble */}
+      <pointLight
+        position={[0, 0, 0]}
+        intensity={unlocks?.goldenMarble ? 0.8 : 0.5}
+        color={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
+        distance={2}
+        decay={2}
       />
-    </Sphere>
+      <Sphere ref={ref as any} args={[0.3, 32, 32]} castShadow>
+        <meshStandardMaterial
+          color={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
+          metalness={0.9}
+          roughness={unlocks?.goldenMarble ? 0.05 : 0.1}
+          emissive={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
+          emissiveIntensity={unlocks?.goldenMarble ? 1.2 : 0.8}
+        />
+      </Sphere>
+    </group>
   );
 });
 Marble.displayName = 'Marble';
@@ -369,8 +904,61 @@ const Ground = React.memo(() => {
 Ground.displayName = 'Ground';
 
 // 3D Scene Component
-const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) => {
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, rhythmLockEnabled }: any) => {
   const [marbles, setMarbles] = useState<any[]>([]);
+  const [ripples, setRipples] = useState<Array<{ id: string; position: [number, number, number]; color: string }>>([]);
+
+  // Combo System State
+  const [comboCount, setComboCount] = useState(0);
+  const [comboMultiplier, setComboMultiplier] = useState(1);
+  const [lastCollisionTime, setLastCollisionTime] = useState(0);
+  const [comboDisplay, setComboDisplay] = useState({ show: false, text: '', scale: 1 });
+  const comboTimeoutMs = 2000; // 2 seconds to maintain combo
+
+  // Unlock System State
+  const [unlocks, setUnlocks] = useState({
+    enhancedParticles: false, // 5 combo
+    goldenMarble: false, // 10 combo
+    rainbowRipples: false, // 15 combo
+    goldenMode: false // 20 combo
+  });
+
+  // Session Stats (tracked but not displayed in 3D scene)
+  const [sessionStats, setSessionStats] = useState({
+    totalCollisions: 0,
+    maxCombo: 0,
+    totalScore: 0
+  });
+
+  // Rhythm Lock System
+  const [rhythmLock, setRhythmLock] = useState({
+    enabled: false,
+    beatsPerMinute: 60, // 1 second intervals
+    lastBeatTime: 0,
+    collisionRhythms: [] as number[], // Time intervals between collisions
+    suggestedDropTime: 0,
+    rhythmQuality: 0 // 0-1, how well collisions match the rhythm
+  });
+  const idealInterval = 60000 / rhythmLock.beatsPerMinute; // ms between beats
+
+  // Pythagora Switch Completion System
+  const [completionCelebration, setCompletionCelebration] = useState({
+    enabled: false,
+    marblesCompleted: 0
+  });
+  const [perfectRun, setPerfectRun] = useState({
+    active: false,
+    flawlessHits: 0
+  });
+
+  // Calculate multiplier based on combo count
+  const calculateMultiplier = (combo: number): number => {
+    if (combo >= 20) return 5;
+    if (combo >= 15) return 4;
+    if (combo >= 10) return 3;
+    if (combo >= 5) return 2;
+    return 1;
+  };
 
   // Handle mouse clicks to add modules/marbles
   const handlePointerDown = (e: any) => {
@@ -387,6 +975,241 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: a
       onNodeAdd?.({ x: point.x, y: point.y + 2, z: point.z });
     }
   };
+
+  // Handle collisions and create ripple effects
+  const handleCollision = (event: any) => {
+    const now = Date.now();
+    const timeSinceLastCollision = now - lastCollisionTime;
+
+    // Track rhythm if enabled
+    if (rhythmLock.enabled && lastCollisionTime > 0) {
+      setRhythmLock(prev => {
+        const newRhythms = [...prev.collisionRhythms, timeSinceLastCollision].slice(-10); // Keep last 10 intervals
+
+        // Calculate rhythm quality (how close to ideal interval)
+        const avgInterval = newRhythms.reduce((a, b) => a + b, 0) / newRhythms.length;
+        const quality = 1 - Math.min(1, Math.abs(avgInterval - idealInterval) / idealInterval);
+
+        // Calculate next suggested drop time
+        const nextBeat = now + idealInterval;
+
+        return {
+          ...prev,
+          lastBeatTime: now,
+          collisionRhythms: newRhythms,
+          suggestedDropTime: nextBeat,
+          rhythmQuality: quality
+        };
+      });
+    }
+
+    // Check if combo should continue or reset
+    if (timeSinceLastCollision < comboTimeoutMs) {
+      // Continue combo
+      const newCombo = comboCount + 1;
+      const newMultiplier = calculateMultiplier(newCombo);
+      setComboCount(newCombo);
+      setComboMultiplier(newMultiplier);
+
+      // Update session stats
+      setSessionStats(prev => ({
+        totalCollisions: prev.totalCollisions + 1,
+        maxCombo: Math.max(prev.maxCombo, newCombo),
+        totalScore: prev.totalScore + (10 * newMultiplier)
+      }));
+
+      // Show combo display if multiplier increased
+      if (newMultiplier > comboMultiplier) {
+        const multiplierText = `${newMultiplier}x COMBO!`;
+        setComboDisplay({ show: true, text: multiplierText, scale: 1.5 });
+
+        // Hide combo display after animation
+        setTimeout(() => {
+          setComboDisplay(prev => ({ ...prev, show: false, scale: 1 }));
+        }, 1000);
+      }
+
+      // Check for perfect run (high combo without misses)
+      if (newCombo >= 15 && !perfectRun.active) {
+        setPerfectRun({
+          active: true,
+          flawlessHits: newCombo
+        });
+
+        // Hide perfect run indicator after 3 seconds
+        setTimeout(() => {
+          setPerfectRun({
+            active: false,
+            flawlessHits: 0
+          });
+        }, 3000);
+      }
+
+      // Update flawless hits counter
+      if (perfectRun.active) {
+        setPerfectRun(prev => ({
+          ...prev,
+          flawlessHits: newCombo
+        }));
+      }
+
+      // Check for unlocks
+      setUnlocks(prev => {
+        const newUnlocks = { ...prev };
+        let unlockTriggered = false;
+
+        if (newCombo >= 5 && !prev.enhancedParticles) {
+          newUnlocks.enhancedParticles = true;
+          unlockTriggered = true;
+        }
+        if (newCombo >= 10 && !prev.goldenMarble) {
+          newUnlocks.goldenMarble = true;
+          unlockTriggered = true;
+        }
+        if (newCombo >= 15 && !prev.rainbowRipples) {
+          newUnlocks.rainbowRipples = true;
+          unlockTriggered = true;
+        }
+        if (newCombo >= 20 && !prev.goldenMode) {
+          newUnlocks.goldenMode = true;
+          unlockTriggered = true;
+        }
+
+        if (unlockTriggered) {
+          // Show unlock notification
+          const unlockText = 'UNLOCKED!';
+          setComboDisplay({ show: true, text: unlockText, scale: 2 });
+          setTimeout(() => {
+            setComboDisplay(prev => ({ ...prev, show: false, scale: 1 }));
+          }, 1500);
+        }
+
+        return newUnlocks;
+      });
+    } else {
+      // Reset combo
+      setComboCount(1);
+      setComboMultiplier(1);
+
+      // Update session stats (reset combo)
+      setSessionStats(prev => ({
+        ...prev,
+        totalCollisions: prev.totalCollisions + 1,
+        totalScore: prev.totalScore + 10
+      }));
+    }
+
+    setLastCollisionTime(now);
+
+    // Trigger audio callback
+    onCollision?.(event);
+
+    // Create ripple at collision point with color based on multiplier/unlocks
+    const rippleId = `ripple-${Date.now()}-${Math.random()}`;
+    let rippleColor: string;
+
+    if (unlocks.goldenMode && comboMultiplier >= 5) {
+      // Golden mode: gold ripples
+      rippleColor = '#FFD700';
+    } else if (unlocks.rainbowRipples && comboMultiplier >= 4) {
+      // Rainbow effect: cycle through colors
+      const rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
+      rippleColor = rainbowColors[comboCount % rainbowColors.length];
+    } else {
+      // Standard colors based on multiplier
+      const rippleColors = ['#FF4757', '#FFA502', '#FFDD59', '#00D2D3', '#5F27CD'];
+      rippleColor = rippleColors[Math.min(comboMultiplier - 1, 4)];
+    }
+
+    // Limit ripples to prevent performance issues (max 5)
+    setRipples(prev => {
+      const newRipple: { id: string; position: [number, number, number]; color: string } = {
+        id: rippleId,
+        position: [event.position.x, event.position.y + 0.1, event.position.z] as [number, number, number],
+        color: rippleColor
+      };
+      const newRipples = [...prev, newRipple];
+      // Keep only the 5 most recent ripples
+      return newRipples.slice(-5);
+    });
+  };
+
+  // Remove ripple when animation completes
+  const handleRippleComplete = (rippleId: string) => {
+    setRipples(prev => prev.filter(r => r.id !== rippleId));
+  };
+
+  // Check for combo timeout
+  useEffect(() => {
+    if (lastCollisionTime > 0) {
+      const timeoutId = setTimeout(() => {
+        const timeSinceLastCollision = Date.now() - lastCollisionTime;
+        if (timeSinceLastCollision >= comboTimeoutMs && comboCount > 0) {
+          setComboCount(0);
+          setComboMultiplier(1);
+        }
+      }, comboTimeoutMs);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [lastCollisionTime, comboCount, comboTimeoutMs]);
+
+  // Notify parent of stats updates
+  useEffect(() => {
+    onStatsUpdate?.(sessionStats);
+  }, [sessionStats, onStatsUpdate]);
+
+  // Sync rhythm lock enabled state
+  useEffect(() => {
+    setRhythmLock(prev => ({ ...prev, enabled: rhythmLockEnabled }));
+  }, [rhythmLockEnabled]);
+
+  // Track marble completions and cleanup (prevent memory overflow)
+  useEffect(() => {
+    const completionThreshold = -5; // Y position below ground
+    const maxMarbles = 10; // Maximum active marbles to prevent memory issues
+
+    const checkCompletions = () => {
+      // Find marbles to remove (completed or too many)
+      setMarbles(prev => {
+        // Mark completed marbles
+        const updated = prev.map(marble => {
+          if (marble.position[1] < completionThreshold && !marble.completed) {
+            // Marble has completed its journey
+            setCompletionCelebration(prev => {
+              const newCount = prev.marblesCompleted + 1;
+              return {
+                enabled: true,
+                marblesCompleted: newCount
+              };
+            });
+
+            // Reset celebration after animation
+            setTimeout(() => {
+              setCompletionCelebration(prev => ({ ...prev, enabled: false }));
+            }, 2000);
+
+            return { ...marble, completed: true };
+          }
+          return marble;
+        });
+
+        // Remove completed marbles AND limit total count
+        const activeMarbles = updated.filter(m => !m.completed);
+
+        // If too many marbles, remove oldest
+        if (activeMarbles.length > maxMarbles) {
+          return activeMarbles.slice(-maxMarbles);
+        }
+
+        // Also remove completed marbles
+        return activeMarbles;
+      });
+    };
+
+    const intervalId = setInterval(checkCompletions, 500);
+    return () => clearInterval(intervalId);
+  }, [marbles]);
 
   // Module renderer
   const renderModule = (node: PatchNode) => {
@@ -418,7 +1241,7 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: a
 
   return (
     <>
-      <PerspectiveCamera makeDefault position={[15, 12, 15]} />
+      <PerspectiveCamera makeDefault position={[15, 12, 15]} fov={60} />
       <OrbitControls
         enablePan={true}
         enableZoom={true}
@@ -477,9 +1300,51 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: a
         <Marble
           key={marble.id}
           position={marble.position}
-          onCollide={onCollision}
+          onCollide={handleCollision}
+          unlocks={unlocks}
         />
       ))}
+
+      {/* Render active ripples */}
+      {ripples.map((ripple) => (
+        <Ripple
+          key={ripple.id}
+          position={ripple.position}
+          color={ripple.color}
+          onComplete={() => handleRippleComplete(ripple.id)}
+        />
+      ))}
+
+      {/* Combo Display */}
+      <ComboDisplay
+        show={comboDisplay.show}
+        text={comboDisplay.text}
+        scale={comboDisplay.scale}
+        comboCount={comboCount}
+        multiplier={comboMultiplier}
+      />
+
+      {/* Rhythm Indicator */}
+      <RhythmIndicator
+        enabled={rhythmLock.enabled}
+        quality={rhythmLock.rhythmQuality}
+        suggestedDropTime={rhythmLock.suggestedDropTime}
+      />
+
+      {/* Breathing Guide */}
+      <BreathingGuide enabled={rhythmLock.enabled} />
+
+      {/* Completion Celebration */}
+      <CompletionCelebration
+        enabled={completionCelebration.enabled}
+        onComplete={() => setCompletionCelebration(prev => ({ ...prev, enabled: false }))}
+      />
+
+      {/* Perfect Run Indicator */}
+      <PerfectRunIndicator
+        active={perfectRun.active}
+        flawlessHits={perfectRun.flawlessHits}
+      />
 
       {/* Atmosphere particles */}
       <group>
@@ -499,6 +1364,9 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: a
           </Sphere>
         ))}
       </group>
+
+      {/* Global ambient glow light */}
+      <pointLight position={[0, 10, 0]} intensity={0.3} color="#FF6B6B" distance={20} />
     </>
   );
 });
@@ -512,8 +1380,19 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
 }) => {
   const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [droneEnabled, setDroneEnabled] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Session stats for UI display
+  const [displayStats, setDisplayStats] = useState({
+    totalCollisions: 0,
+    maxCombo: 0,
+    totalScore: 0
+  });
+
+  // Rhythm lock state for UI control
+  const [rhythmLockEnabled, setRhythmLockEnabled] = useState(false);
 
   useEffect(() => {
     const initializeBridge = async () => {
@@ -547,9 +1426,21 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     }
   };
 
+  const handleDroneToggle = () => {
+    const newDroneState = !droneEnabled;
+    setDroneEnabled(newDroneState);
+    if (synthBridge) {
+      synthBridge.setDroneEnabled(newDroneState);
+    }
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'm' || event.key === 'M') {
       handleMute();
+    } else if (event.key === 'd' || event.key === 'D') {
+      handleDroneToggle();
+    } else if (event.key === 'r' || event.key === 'R') {
+      setRhythmLockEnabled(!rhythmLockEnabled);
     }
   };
 
@@ -593,6 +1484,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               }}
               selectedNodeType={selectedNodeType}
               onNodeAdd={onNodeAdd}
+              onStatsUpdate={(stats: any) => setDisplayStats(stats)}
+              rhythmLockEnabled={rhythmLockEnabled}
             />
           </Physics>
         </Suspense>
@@ -672,6 +1565,80 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             {isMuted ? <VolumeOff /> : <VolumeUp />}
           </IconButton>
         </Tooltip>
+        <Tooltip title={droneEnabled ? "Disable Drone (Press D)" : "Enable Drone (Press D)"}>
+          <IconButton
+            onClick={handleDroneToggle}
+            sx={{
+              background: droneEnabled ? 'rgba(0, 191, 166, 0.9)' : 'rgba(26, 26, 46, 0.9)',
+              color: 'white',
+              '&:hover': { background: droneEnabled ? 'rgba(0, 191, 166, 1)' : 'rgba(26, 26, 46, 1)' }
+            }}
+            aria-label={droneEnabled ? "Disable ambient drone" : "Enable ambient drone"}
+          >
+            <GraphicEq />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={rhythmLockEnabled ? "Disable Rhythm Lock (Press R)" : "Enable Rhythm Lock (Press R)"}>
+          <IconButton
+            onClick={() => setRhythmLockEnabled(!rhythmLockEnabled)}
+            sx={{
+              background: rhythmLockEnabled ? 'rgba(156, 39, 176, 0.9)' : 'rgba(26, 26, 46, 0.9)',
+              color: 'white',
+              '&:hover': { background: rhythmLockEnabled ? 'rgba(156, 39, 176, 1)' : 'rgba(26, 26, 46, 1)' }
+            }}
+            aria-label={rhythmLockEnabled ? "Disable rhythm lock" : "Enable rhythm lock"}
+          >
+            <AccessTime />
+          </IconButton>
+        </Tooltip>
+      </MUIBox>
+
+      {/* Session Stats Display */}
+      <MUIBox
+        sx={{
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          background: 'rgba(26, 26, 46, 0.9)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: 2,
+          padding: 2,
+          color: 'white',
+          minWidth: 150
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <Typography variant="caption" sx={{ display: 'block', opacity: 0.7, mb: 0.5 }}>
+          Session Stats
+        </Typography>
+        <MUIBox sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+              Score:
+            </Typography>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#FFD700' }}>
+              {displayStats.totalScore}
+            </Typography>
+          </MUIBox>
+          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+              Hits:
+            </Typography>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold' }}>
+              {displayStats.totalCollisions}
+            </Typography>
+          </MUIBox>
+          <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+              Max Combo:
+            </Typography>
+            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#00BFA6' }}>
+              {displayStats.maxCombo}
+            </Typography>
+          </MUIBox>
+        </MUIBox>
       </MUIBox>
 
       {/* Selected Module Type Indicator */}
