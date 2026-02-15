@@ -788,14 +788,14 @@ const Ground = React.memo(() => {
   return (
     <Plane ref={ref as any} args={[50, 50]} receiveShadow>
       <MeshReflectorMaterial
-        mirror={0.3}
-        blur={[512, 512]}
-        resolution={512}
-        mixBlur={1}
-        mixStrength={1}
-        color="#1A1A2E"
-        metalness={0.5}
-        roughness={0.1}
+        mirror={0.15}
+        blur={[256, 256]}
+        resolution={256}
+        mixBlur={0.7}
+        mixStrength={0.7}
+        color="#0A0A0F"
+        metalness={0.3}
+        roughness={0.3}
       />
     </Plane>
   );
@@ -1113,35 +1113,34 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         target={[0, 2, 0]}
       />
 
-      {/* Enhanced Lighting */}
-      <ambientLight intensity={0.4} />
+      {/* Optimized Lighting - reduced for performance */}
+      <ambientLight intensity={0.3} />
       <directionalLight
         position={[10, 15, 10]}
-        intensity={1.5}
+        intensity={1.0}
         castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-far={50}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-far={40}
+        shadow-camera-left={-15}
+        shadow-camera-right={15}
+        shadow-camera-top={15}
+        shadow-camera-bottom={-15}
       />
-      <pointLight position={[-10, 10, -10]} intensity={0.5} color="#4ECDC4" />
-      <pointLight position={[10, 5, 10]} intensity={0.5} color="#FF6B6B" />
 
-      {/* Environment */}
-      <Environment preset="night" />
+      {/* Environment - removed for performance, using simple lighting instead */}
 
       {/* Interactive Ground */}
       <Ground />
 
-      {/* Contact Shadows */}
+      {/* Contact Shadows - simplified for performance */}
       <ContactShadows
         position={[0, -1.9, 0]}
-        opacity={0.6}
-        scale={30}
-        blur={2}
-        far={10}
+        opacity={0.3}
+        scale={20}
+        blur={1.5}
+        far={8}
+        width={1024}
+        height={1024}
       />
 
       {/* Invisible interaction plane */}
@@ -1197,9 +1196,9 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         flawlessHits={perfectRun.flawlessHits}
       />
 
-      {/* Atmosphere particles */}
+      {/* Atmosphere particles - reduced for performance */}
       <group>
-        {Array.from({ length: 20 }, (_, i) => (
+        {Array.from({ length: 8 }, (_, i) => (
           <Sphere key={i} args={[0.02]} position={[
             (Math.random() - 0.5) * 30,
             Math.random() * 15 + 5,
@@ -1215,9 +1214,6 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
           </Sphere>
         ))}
       </group>
-
-      {/* Global ambient glow light */}
-      <pointLight position={[0, 10, 0]} intensity={0.3} color="#FF6B6B" distance={20} />
     </>
   );
 });
