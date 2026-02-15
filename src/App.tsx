@@ -4,72 +4,108 @@ import {
   CssBaseline,
   ThemeProvider,
   createTheme,
-  AppBar,
-  Toolbar,
   Typography,
-  Button,
-  ButtonGroup,
-  Tooltip,
-  Alert,
   Snackbar,
   Card,
-  CardContent,
-  Chip
+  CardContent
 } from '@mui/material';
-import {
-  Clear as ClearIcon,
-  Home as HomeIcon
-} from '@mui/icons-material';
 import { Physics3DCanvas } from './components/Physics3DCanvas';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { PatchNode } from './types/db.types';
 import { CollisionEvent } from './engines/physics';
 
-// Dark theme configuration with improved colors for Pythagora Switch
-const darkTheme = createTheme({
+// Divine Monochrome Theme - Sacred minimalist design
+const divineTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#00BFA6',
+      main: '#FFFFFF',
+      light: '#FFFFFF',
+      dark: '#CCCCCC',
+      contrastText: '#000000'
     },
     secondary: {
-      main: '#FF6B6B',
+      main: '#888888',
+      light: '#AAAAAA',
+      dark: '#666666',
+      contrastText: '#000000'
     },
     background: {
-      default: '#0A0A0F',
-      paper: '#1A1A2E',
+      default: '#000000',
+      paper: '#0A0A0A',
     },
+    text: {
+      primary: '#FFFFFF',
+      secondary: '#CCCCCC',
+      disabled: '#666666'
+    },
+    divider: '#333333',
+  },
+  typography: {
+    fontFamily: '"Cinzel", "Trajan", "Times New Roman", serif',
+    h1: { fontWeight: 300, letterSpacing: '0.2em' },
+    h2: { fontWeight: 300, letterSpacing: '0.15em' },
+    h3: { fontWeight: 400, letterSpacing: '0.1em' },
+    h4: { fontWeight: 400, letterSpacing: '0.1em' },
+    h5: { fontWeight: 400, letterSpacing: '0.05em' },
+    h6: { fontWeight: 500, letterSpacing: '0.05em' },
+    body1: { fontWeight: 300, letterSpacing: '0.02em' },
+    body2: { fontWeight: 300, letterSpacing: '0.02em' },
+    button: { fontWeight: 400, letterSpacing: '0.1em', textTransform: 'uppercase' }
   },
   components: {
     MuiCssBaseline: {
       styleOverrides: {
         body: {
-          scrollbarColor: "#6b6b6b #2b2b2b",
+          scrollbarColor: "#333333 #000000",
           "&::-webkit-scrollbar, & *::-webkit-scrollbar": {
-            backgroundColor: "#2b2b2b",
-            width: 8,
+            backgroundColor: "#000000",
+            width: 6,
           },
           "&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb": {
-            borderRadius: 8,
-            backgroundColor: "#6b6b6b",
+            borderRadius: 3,
+            backgroundColor: "#333333",
             minHeight: 24,
           },
         },
+        '@font-face': {
+          fontFamily: 'Cinzel',
+          src: `url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&display=swap')`
+        }
       },
     },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderWidth: 1,
+          '&:hover': {
+            borderWidth: 1
+          }
+        }
+      }
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          '&:hover': {
+            backgroundColor: 'rgba(255, 255, 255, 0.08)'
+          }
+        }
+      }
+    }
   },
 });
 
 const moduleTypes = [
-  { type: 'marble', name: '🔴 Marble', description: 'Drop physics marble' },
-  { type: 'ramp', name: '📐 Ramp', description: 'Guiding slope' },
-  { type: 'bumper', name: '🥁 Bumper', description: 'Drum sound trigger' },
-  { type: 'chime', name: '🎵 Chime', description: 'Musical note trigger' },
-  { type: 'spinner', name: '🌀 Spinner', description: 'Rotating melody wheel' },
-  { type: 'funnel', name: '🌪️ Funnel', description: 'Sound spiral effect' },
-  { type: 'seesaw', name: '⚖️ Seesaw', description: 'Balance sound trigger' },
-  { type: 'bell', name: '🔔 Bell', description: 'Harmonic bell sound' },
+  { type: 'marble', name: 'Origin', description: 'Drop marble', symbol: 'marble' },
+  { type: 'ramp', name: 'Slope', description: 'Guiding path', symbol: 'ramp' },
+  { type: 'bumper', name: 'Base', description: 'Foundation', symbol: 'bumper' },
+  { type: 'chime', name: 'Hex', description: 'Resonance', symbol: 'chime' },
+  { type: 'spinner', name: 'Spiral', description: 'Evolution', symbol: 'spinner' },
+  { type: 'funnel', name: 'Portal', description: 'Transcendence', symbol: 'funnel' },
+  { type: 'seesaw', name: 'Balance', description: 'Equilibrium', symbol: 'seesaw' },
+  { type: 'bell', name: 'Axis', description: 'Cosmic pillar', symbol: 'bell' },
 ];
 
 function App() {
@@ -110,7 +146,7 @@ function App() {
       setNodes(demoModules);
 
       setNotification({
-        message: '🎵 Welcome to Pythagora-Synth! Click to drop marbles and create music!',
+        message: 'Click to drop marbles and create sacred music',
         severity: 'info'
       });
     }
@@ -131,7 +167,7 @@ function App() {
     setNodes(prev => [...prev, newModule]);
 
     setNotification({
-      message: `✨ Added ${selectedModuleType} module!`,
+      message: `Module added`,
       severity: 'success'
     });
   }, [selectedModuleType]);
@@ -139,6 +175,15 @@ function App() {
   // Handle collision events
   const handleCollision = useCallback((_event: CollisionEvent) => {
     // Collision feedback can be handled here for UI updates
+  }, []);
+
+  // Handle module type selection
+  const handleSelectionChange = useCallback((moduleType: string) => {
+    setSelectedModuleType(moduleType);
+    setNotification({
+      message: `Selected: ${moduleType.toUpperCase()}`,
+      severity: 'info'
+    });
   }, []);
 
   // Clear all modules
@@ -152,7 +197,7 @@ function App() {
 
   if (showLanding) {
     return (
-      <ThemeProvider theme={darkTheme}>
+      <ThemeProvider theme={divineTheme}>
         <CssBaseline />
         <Landing onEnter={() => setShowLanding(false)} />
       </ThemeProvider>
@@ -160,7 +205,7 @@ function App() {
   }
 
   return (
-    <ThemeProvider theme={darkTheme}>
+    <ThemeProvider theme={divineTheme}>
       <CssBaseline />
       <Box sx={{
         display: 'flex',
@@ -168,51 +213,6 @@ function App() {
         height: '100vh',
         background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
       }}>
-        {/* Top Control Bar */}
-        <AppBar position="static" sx={{
-          background: 'rgba(26, 26, 46, 0.9)',
-          backdropFilter: 'blur(10px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-        }}>
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
-              🧩 Pythagora-Synth
-            </Typography>
-
-            {/* Module Type Selector */}
-            <Box sx={{ display: 'flex', gap: 1, mr: 2 }}>
-              {moduleTypes.map(({ type, name }) => (
-                <Tooltip key={type} title={moduleTypes.find(m => m.type === type)?.description || ''}>
-                  <Chip
-                    label={name}
-                    onClick={() => setSelectedModuleType(type)}
-                    variant={selectedModuleType === type ? 'filled' : 'outlined'}
-                    size="small"
-                    sx={{
-                      '&:hover': { transform: 'scale(1.05)' },
-                      transition: 'all 0.2s'
-                    }}
-                  />
-                </Tooltip>
-              ))}
-            </Box>
-
-            {/* Action Buttons */}
-            <ButtonGroup variant="outlined" size="small">
-              <Tooltip title="Clear all modules">
-                <Button onClick={handleClearAll} startIcon={<ClearIcon />}>
-                  Clear
-                </Button>
-              </Tooltip>
-              <Tooltip title="Go to landing">
-                <Button onClick={() => setShowLanding(true)} startIcon={<HomeIcon />}>
-                  Home
-                </Button>
-              </Tooltip>
-            </ButtonGroup>
-          </Toolbar>
-        </AppBar>
-
         {/* Main 3D Canvas */}
         <Box sx={{ flexGrow: 1, position: 'relative' }}>
           <ErrorBoundary
@@ -224,9 +224,7 @@ function App() {
               nodes={nodes}
               onNodeAdd={handleModuleAdd}
               onCollision={handleCollision}
-              onSelectionChange={() => {
-                // Node selection handling
-              }}
+              onModuleTypeChange={handleSelectionChange}
               selectedNodeType={selectedModuleType}
             />
           </ErrorBoundary>
@@ -236,20 +234,32 @@ function App() {
             position: 'absolute',
             bottom: 20,
             left: 20,
-            maxWidth: 300,
-            background: 'rgba(26, 26, 46, 0.9)',
+            maxWidth: 280,
+            background: '#000000',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid #333333'
           }}>
             <CardContent>
-              <Typography variant="body2" color="primary" gutterBottom>
-                🎯 How to use:
+              <Typography variant="body2" sx={{
+                fontSize: '0.75rem',
+                letterSpacing: '0.1em',
+                mb: 1,
+                color: '#FFFFFF'
+              }}>
+                SACRED KEYS
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                • Select a module type above<br/>
-                • Click in 3D space to place it<br/>
-                • Drop marbles to create music<br/>
-                • Drag to orbit the camera
+              <Typography variant="body2" sx={{
+                fontSize: '0.7rem',
+                color: '#CCCCCC',
+                lineHeight: 1.8
+              }}>
+                1-8: Select modules<br/>
+                Space: Drop marble<br/>
+                M: Mute/Unmute<br/>
+                D: Cycle echo (off/short/long)<br/>
+                C: Clear all<br/>
+                H: Toggle help<br/>
+                ESC: Return to origin
               </Typography>
             </CardContent>
           </Card>
@@ -258,17 +268,21 @@ function App() {
         {/* Notifications */}
         <Snackbar
           open={!!notification}
-          autoHideDuration={4000}
+          autoHideDuration={3000}
           onClose={() => setNotification(null)}
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
-          <Alert
-            onClose={() => setNotification(null)}
-            severity={notification?.severity || 'info'}
-            variant="filled"
-          >
+          <Box sx={{
+            background: '#000000',
+            border: '1px solid #333333',
+            color: '#FFFFFF',
+            padding: '12px 24px',
+            borderRadius: 1,
+            fontSize: '0.875rem',
+            letterSpacing: '0.05em'
+          }}>
             {notification?.message}
-          </Alert>
+          </Box>
         </Snackbar>
       </Box>
     </ThemeProvider>

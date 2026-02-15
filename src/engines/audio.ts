@@ -33,19 +33,13 @@ interface TemporaryNodes {
   timeoutId: NodeJS.Timeout | null;
 }
 
-// Ambient Drone System types
-interface DroneLayer {
-  oscillator: Tone.Oscillator;
-  gain: Tone.Gain;
-  lfo: Tone.LFO;
-  filter: Tone.Filter;
-}
+// Echo Mode System
+type EchoMode = 'off' | 'short' | 'long';
 
-interface DroneConfig {
-  baseFrequency: number;
-  volume: number;
-  lfoRate: number;
-  lfoDepth: number;
+interface EchoConfig {
+  delayTime: number;
+  feedback: number;
+  wet: number;
 }
 
 // Harmonic Resonance Chain System
@@ -91,10 +85,14 @@ export class AudioEngine {
   private granularDelay: Tone.PingPongDelay;
   private temporaryNodes: Map<string, TemporaryNodes> = new Map();
 
-  // Ambient Drone System
-  private droneLayers: DroneLayer[] = [];
-  private droneEnabled = false;
-  private collisionIntensity = 0; // 0-1, increases with collisions
+  // Echo Mode System
+  private echoMode: EchoMode = 'off';
+  private echoDelay: Tone.FeedbackDelay;
+  private echoConfigs: Record<EchoMode, EchoConfig> = {
+    off: { delayTime: 0, feedback: 0, wet: 0 },
+    short: { delayTime: 0.2, feedback: 0.3, wet: 0.25 },  // 200ms delay
+    long: { delayTime: 0.8, feedback: 0.6, wet: 0.4 }     // 800ms delay
+  };
 
   // Harmonic Resonance Chain System
   private collisionHistory: CollisionRecord[] = [];
@@ -108,6 +106,16 @@ export class AudioEngine {
   private silenceThreshold = 3000; // ms of no collision = "silence moment"
   private baseReverbDecay = 12; // Default reverb decay in seconds
   private dynamicReverbDecay = 12; // Current reverb decay (adjusts dynamically)
+
+  // Performance Optimization: Voice Pool System
+  private voicePool: Array<{
+    osc: Tone.Oscillator;
+    env: Tone.AmplitudeEnvelope;
+    gain: Tone.Gain;
+    inUse: boolean;
+  }> = [];
+  private readonly maxVoices = 16; // Maximum simultaneous sounds
+  private activeVoiceCount = 0;
 
   constructor() {
     try {
@@ -160,6 +168,16 @@ export class AudioEngine {
         wet: 0.2
       }).connect(this.glitchProcessor);
 
+      // Initialize echo delay for echo modes
+      this.echoDelay = new Tone.FeedbackDelay({
+        delayTime: this.echoConfigs.off.delayTime,
+        feedback: this.echoConfigs.off.feedback,
+        wet: this.echoConfigs.off.wet
+      }).connect(this.masterCompressor);
+
+      // Performance: Initialize voice pool for reusing oscillators
+      this.initializeVoicePool();
+
       // Start reverb decay monitoring loop
       this.startReverbMonitoring();
     } catch (error) {
@@ -167,216 +185,130 @@ export class AudioEngine {
     }
   }
 
-  // ==================== AMBIENT DRONE SYSTEM ====================
+  // ==================== PERFORMANCE OPTIMIZATION ====================
 
   /**
-   * Initialize the 3-layer ambient drone system
-   * Layer 1: Deep Bass (65Hz - 130Hz) - Foundation
-   * Layer 2: Harmonic Pad (261Hz - 528Hz) - Harmony
-   * Layer 3: Ethereal Texture (high freq micro-movements) - Air
+   * Initialize voice pool for reusing oscillators
+   * Pre-allocates oscillators to avoid garbage collection during playback
    */
-  initializeDrone(): void {
-    if (this.droneLayers.length > 0) return; // Already initialized
+  private initializeVoicePool(): void {
+    for (let i = 0; i < this.maxVoices; i++) {
+      const osc = new Tone.Oscillator({
+        type: 'sine',
+        volume: -12
+      });
+
+      const env = new Tone.AmplitudeEnvelope({
+        attack: 0.05,
+        decay: 0.3,
+        sustain: 0.4,
+        release: 1.0
+      });
+
+      const gain = new Tone.Gain(-12);
+
+      osc.connect(env);
+      env.connect(gain);
+      gain.connect(this.ambientReverb);
+
+      osc.start();
+
+      this.voicePool.push({
+        osc,
+        env,
+        gain,
+        inUse: false
+      });
+    }
+  }
+
+  /**
+   * Get a voice from the pool, or reuse oldest if all are in use
+   */
+  private getVoiceFromPool(): {
+    osc: Tone.Oscillator;
+    env: Tone.AmplitudeEnvelope;
+    gain: Tone.Gain;
+  } | null {
+    // Find an available voice
+    const availableVoice = this.voicePool.find(v => !v.inUse);
+
+    if (availableVoice) {
+      availableVoice.inUse = true;
+      this.activeVoiceCount++;
+      return {
+        osc: availableVoice.osc,
+        env: availableVoice.env,
+        gain: availableVoice.gain
+      };
+    }
+
+    // All voices in use, find oldest (simple round-robin)
+    const reuseIndex = this.activeVoiceCount % this.maxVoices;
+    const voiceToReuse = this.voicePool[reuseIndex];
+
+    // Quick fade out the old sound using triggerRelease
+    try {
+      voiceToReuse.env.triggerRelease();
+      voiceToReuse.osc.frequency.setValueAtTime(voiceToReuse.osc.frequency.value, Tone.now());
+    } catch {
+      // Ignore errors during reuse
+    }
+
+    return {
+      osc: voiceToReuse.osc,
+      env: voiceToReuse.env,
+      gain: voiceToReuse.gain
+    };
+  }
+
+  /**
+   * Return a voice to the pool after use
+   */
+  private returnVoiceToPool(voiceIndex: number): void {
+    if (voiceIndex >= 0 && voiceIndex < this.voicePool.length) {
+      this.voicePool[voiceIndex].inUse = false;
+      this.activeVoiceCount = Math.max(0, this.activeVoiceCount - 1);
+    }
+  }
+
+  // ==================== ECHO MODE SYSTEM ====================
+
+  /**
+   * Set the echo mode (off, short, or long)
+   * Short: 200ms delay with subtle feedback for quick rhythmic echoes
+   * Long: 800ms delay with rich feedback for atmospheric depth
+   */
+  setEchoMode(mode: EchoMode): void {
+    this.echoMode = mode;
+    const config = this.echoConfigs[mode];
 
     try {
-      // Layer 1: Deep Bass (65Hz = C2, one octave below Solfeggio)
-      const bassLayer = this.createDroneLayer({
-        baseFrequency: 65, // C2 - Deep foundation
-        volume: -20,
-        lfoRate: 0.1, // Very slow movement (10 second cycle)
-        lfoDepth: 3 // Subtle filter modulation
-      });
-
-      // Layer 2: Harmonic Pad (261Hz = C4, middle of the spectrum)
-      const padLayer = this.createDroneLayer({
-        baseFrequency: 261, // C4 - Middle C
-        volume: -25,
-        lfoRate: 0.2, // 5 second cycle
-        lfoDepth: 200 // More noticeable movement
-      });
-
-      // Layer 3: Ethereal Texture (528Hz = C5, Solfeggio frequency)
-      const textureLayer = this.createDroneLayer({
-        baseFrequency: 528, // C5 - Solfeggio base
-        volume: -30,
-        lfoRate: 0.5, // 2 second cycle - faster movement
-        lfoDepth: 400 // Pronounced ethereal swirl
-      });
-
-      this.droneLayers = [bassLayer, padLayer, textureLayer];
-    } catch (error) {
-      throw new Error(`Failed to initialize drone system: ${error instanceof Error ? error.message : String(error)}`);
+      this.echoDelay.delayTime.value = config.delayTime;
+      this.echoDelay.feedback.value = config.feedback;
+      this.echoDelay.wet.value = config.wet;
+    } catch (e) {
+      console.error('Failed to set echo mode:', e);
     }
   }
 
   /**
-   * Create a single drone layer with oscillator, filter, LFO, and gain
+   * Get current echo mode
    */
-  private createDroneLayer(config: DroneConfig): DroneLayer {
-    const oscillator = new Tone.Oscillator({
-      frequency: config.baseFrequency,
-      type: 'sine', // Pure, clean tone
-      volume: -6
-    });
-
-    const filter = new Tone.Filter({
-      frequency: 800,
-      type: 'lowpass',
-      Q: 1 // Gentle resonance
-    });
-
-    const gain = new Tone.Gain(-100); // Start muted (very low volume)
-
-    const lfo = new Tone.LFO({
-      frequency: config.lfoRate,
-      min: config.baseFrequency * 0.98,
-      max: config.baseFrequency * 1.02,
-      type: 'sine'
-    });
-
-    // Connect the chain: LFO → Oscillator freq, Oscillator → Filter → Gain → Compressor
-    lfo.connect(oscillator.frequency);
-    oscillator.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterCompressor); // Connect to compressor chain
-
-    // Don't start yet - will be started when enabled
-
-    return { oscillator, gain, lfo, filter };
+  getEchoMode(): EchoMode {
+    return this.echoMode;
   }
 
   /**
-   * Enable/disable the ambient drone
+   * Cycle through echo modes: off → short → long → off
    */
-  setDroneEnabled(enabled: boolean): void {
-    // Initialize first if needed
-    if (this.droneLayers.length === 0) {
-      try {
-        this.initializeDrone();
-      } catch (e) {
-        console.error('Failed to initialize drone:', e);
-        return;
-      }
-    }
-
-    if (enabled) {
-      // Enable - start oscillators and set volume
-      if (!this.droneEnabled) {
-        this.droneLayers.forEach(layer => {
-          try {
-            if (layer.oscillator.state !== 'started') {
-              layer.oscillator.start();
-            }
-            if (layer.lfo.state !== 'started') {
-              layer.lfo.start();
-            }
-          } catch (e) {
-            // Already started or error
-          }
-        });
-      }
-
-      // Set normal volume
-      const targetVolumes = [-20, -25, -30];
-      this.droneLayers.forEach((layer, index) => {
-        try {
-          layer.gain.gain.value = targetVolumes[index];
-        } catch (e) {
-          // Ignore errors
-        }
-      });
-    } else {
-      // Disable - stop oscillators and mute
-      this.droneLayers.forEach(layer => {
-        try {
-          // Stop oscillators
-          if (layer.oscillator.state === 'started') {
-            layer.oscillator.stop();
-          }
-          if (layer.lfo.state === 'started') {
-            layer.lfo.stop();
-          }
-          // Set to mute level
-          layer.gain.gain.value = -100;
-        } catch (e) {
-          // Ignore errors
-        }
-      });
-    }
-
-    this.droneEnabled = enabled;
-  }
-
-  /**
-   * Temporarily boost drone layer on collision
-   * Creates a "brightening" effect when marbles hit modules
-   */
-  enhanceDroneOnCollision(intensity: number = 0.3): void {
-    if (!this.droneEnabled || this.droneLayers.length === 0) return;
-
-    // Clamp intensity between 0 and 1
-    const clampedIntensity = Math.max(0, Math.min(1, intensity));
-    this.collisionIntensity = Math.min(1, this.collisionIntensity + clampedIntensity);
-
-    // Boost upper layers more than bass
-    const boosts = [-3, -6, -9]; // dB boost for each layer
-
-    this.droneLayers.forEach((layer, index) => {
-      const baseVolume = index === 0 ? -20 : index === 1 ? -25 : -30;
-      const boostedVolume = baseVolume + (boosts[index] * clampedIntensity * 2);
-
-      try {
-        layer.gain.gain.value = boostedVolume;
-      } catch (e) {
-        // Ignore
-      }
-    });
-
-    // Gradually return to normal over 2 seconds
-    setTimeout(() => {
-      this.fadeDroneToNormal();
-    }, 2000);
-  }
-
-  /**
-   * Fade drone layers back to baseline
-   */
-  private fadeDroneToNormal(): void {
-    if (!this.droneEnabled || this.droneLayers.length === 0) return;
-
-    this.collisionIntensity = Math.max(0, this.collisionIntensity - 0.3);
-
-    const baseVolumes = [-20, -25, -30];
-    this.droneLayers.forEach((layer, index) => {
-      try {
-        layer.gain.gain.value = baseVolumes[index];
-      } catch (e) {
-        // Ignore
-      }
-    });
-  }
-
-  /**
-   * Set drone overall volume
-   */
-  setDroneVolume(volume: number): void {
-    this.droneLayers.forEach(layer => {
-      try {
-        layer.gain.gain.value = volume;
-      } catch (e) {
-        // Ignore
-      }
-    });
-  }
-
-  /**
-   * Get current drone status
-   */
-  getDroneStatus(): { enabled: boolean; intensity: number } {
-    return {
-      enabled: this.droneEnabled,
-      intensity: this.collisionIntensity
-    };
+  cycleEchoMode(): EchoMode {
+    const modes: EchoMode[] = ['off', 'short', 'long'];
+    const currentIndex = modes.indexOf(this.echoMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    const nextMode = modes[nextIndex];
+    this.setEchoMode(nextMode);
+    return nextMode;
   }
 
   // ==================== HARMONIC RESONANCE CHAIN ====================
@@ -405,57 +337,37 @@ export class AudioEngine {
   /**
    * Play harmonic chord instead of single note
    * Creates rich, layered sound with root, third, and fifth
+   * PERFORMANCE: Uses voice pool to avoid creating new oscillators
    */
   private playHarmonicChord(harmony: HarmonyNote, duration: number = 1.5): void {
     const now = Tone.now();
-
-    // Create oscillators for each note in the triad
     const notes = [harmony.root, harmony.third, harmony.fifth];
-    const gains: Tone.Gain[] = [];
+    const usedVoices: number[] = [];
 
     notes.forEach((freq, index) => {
-      const osc = new Tone.Oscillator({
-        frequency: freq,
-        type: 'sine',
-        volume: -12
-      });
+      // Get voice from pool
+      const voice = this.getVoiceFromPool();
+      if (!voice) return; // Skip if no voice available
 
-      const env = new Tone.AmplitudeEnvelope({
-        attack: 0.05,
-        decay: 0.3,
-        sustain: 0.4,
-        release: duration - 0.75
-      });
+      // Find voice index in pool for later return
+      const voiceIndex = this.voicePool.findIndex(v => v.osc === voice.osc);
+      if (voiceIndex >= 0) usedVoices.push(voiceIndex);
 
-      const gain = new Tone.Gain(index === 0 ? -6 : -9); // Root slightly louder
-
-      osc.connect(env);
-      env.connect(gain);
-      gain.connect(this.ambientReverb);
-
-      osc.start(now);
-      env.triggerAttackRelease(duration, now);
-
-      gains.push(gain);
-
-      // Cleanup after sound plays
-      const cleanupTime = (duration + 1) * 1000;
-      setTimeout(() => {
-        try {
-          osc.dispose();
-          env.dispose();
-          gain.dispose();
-        } catch {
-          // Silent disposal
-        }
-      }, cleanupTime);
-
-      // Track for cleanup
-      this.temporaryNodes.set(`harmony-${Date.now()}-${index}`, {
-        nodes: [osc, env, gain],
-        timeoutId: null as any
-      });
+      // Set frequency and trigger
+      try {
+        voice.osc.frequency.setValueAtTime(freq, now);
+        voice.gain.gain.setValueAtTime(index === 0 ? -6 : -9, now);
+        voice.env.triggerAttackRelease(duration, now);
+      } catch (e) {
+        // Ignore errors during voice reuse
+      }
     });
+
+    // Return voices to pool after sound completes
+    const returnTime = (duration + 0.5) * 1000;
+    setTimeout(() => {
+      usedVoices.forEach(index => this.returnVoiceToPool(index));
+    }, returnTime);
   }
 
   /**
@@ -1065,11 +977,6 @@ export class AudioEngine {
         });
       }
 
-      // Enhance drone on collision based on velocity
-      // Velocity typically ranges from 0-20, normalize to 0-1
-      const intensity = Math.min(1, event.velocity / 10);
-      this.enhanceDroneOnCollision(intensity);
-
       // Enhance reverb tail on collision for spatial accumulation
       this.enhanceReverbOnCollision(event.velocity);
 
@@ -1115,6 +1022,12 @@ export class AudioEngine {
   }
 
   private playDrumHit(): void {
+    // PERFORMANCE: Check active nodes limit to prevent audio glitch
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // DEEP TEMPLE BELL - completely random pitch each time
     const freq = this.randomScaleFreq(65.41); // C2 base, random variation
 
@@ -1131,11 +1044,12 @@ export class AudioEngine {
       Q: 2
     });
 
+    // PERFORMANCE: Shorter envelope for faster cleanup (same sound quality)
     const env = new Tone.AmplitudeEnvelope({
       attack: 0.01,
-      decay: 2.5,      // Very long decay
-      sustain: 0.3,
-      release: 4       // Huge release
+      decay: 1.0,      // Reduced from 2.5s (still sounds good)
+      sustain: 0.2,
+      release: 1.5     // Reduced from 4s (fades out faster)
     });
 
     osc1.connect(filter);
@@ -1149,8 +1063,9 @@ export class AudioEngine {
     osc2.start();
     osc3.start();
 
-    env.triggerAttackRelease('4s');
+    env.triggerAttackRelease('2s'); // Reduced from 4s
 
+    // PERFORMANCE: Faster cleanup (2.5s instead of 5s)
     const timeoutId = setTimeout(() => {
       try {
         osc1.dispose();
@@ -1159,15 +1074,22 @@ export class AudioEngine {
         filter.dispose();
         env.dispose();
         gain.dispose();
+        this.temporaryNodes.delete('drum');
       } catch (error) {
         // Ignore
       }
-    }, 5000);
+    }, 2500);
 
     this.temporaryNodes.set('drum', { nodes: [osc1, osc2, osc3, filter, env, gain], timeoutId });
   }
 
   private playChimeHit(): void {
+    // PERFORMANCE: Check active nodes limit
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // HEAVENLY HARP - completely random pitch each time
     const freq = this.randomScaleFreq(523.25); // C5 base, random variation
 
@@ -1190,11 +1112,12 @@ export class AudioEngine {
       Q: 0.5
     });
 
+    // PERFORMANCE: Shorter envelope (still sounds beautiful)
     const env = new Tone.AmplitudeEnvelope({
       attack: 0.05,
-      decay: 3,
+      decay: 1.5,      // Reduced from 3s
       sustain: 0.2,
-      release: 6       // Extremely long release
+      release: 2.5     // Reduced from 6s (fades faster)
     });
 
     layers.forEach(layer => {
@@ -1205,8 +1128,9 @@ export class AudioEngine {
     env.connect(masterGain);
     masterGain.connect(this.masterCompressor);
 
-    env.triggerAttackRelease('8s');
+    env.triggerAttackRelease('3s'); // Reduced from 8s
 
+    // PERFORMANCE: Faster cleanup
     const timeoutId = setTimeout(() => {
       try {
         layers.forEach(l => {
@@ -1216,15 +1140,22 @@ export class AudioEngine {
         filter.dispose();
         env.dispose();
         masterGain.dispose();
+        this.temporaryNodes.delete('chime');
       } catch (error) {
         // Ignore
       }
-    }, 9000);
+    }, 3500); // Reduced from 9000ms
 
     this.temporaryNodes.set('chime', { nodes: [env, filter, masterGain], timeoutId });
   }
 
   private playBellHit(): void {
+    // PERFORMANCE: Check active nodes limit
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // CRYSTAL PURE TONE - completely random pitch each time
     const freq = this.randomScaleFreq(880); // A5 base, random variation
 
@@ -1248,11 +1179,12 @@ export class AudioEngine {
     lfo.connect(filter.frequency);
     lfo.start();
 
+    // PERFORMANCE: Shorter envelope (still sounds resonant)
     const env = new Tone.AmplitudeEnvelope({
       attack: 0.001,
-      decay: 4,
+      decay: 2,       // Reduced from 4s
       sustain: 0.1,
-      release: 8       // Massive release
+      release: 3       // Reduced from 8s (still long tail)
     });
 
     const gain = new Tone.Gain(0.4);
@@ -1263,8 +1195,9 @@ export class AudioEngine {
     gain.connect(this.masterCompressor);
 
     osc.start();
-    env.triggerAttackRelease('10s');
+    env.triggerAttackRelease('4s'); // Reduced from 10s
 
+    // PERFORMANCE: Faster cleanup
     const timeoutId = setTimeout(() => {
       try {
         osc.dispose();
@@ -1272,15 +1205,22 @@ export class AudioEngine {
         lfo.dispose();
         env.dispose();
         gain.dispose();
+        this.temporaryNodes.delete('bell');
       } catch (error) {
         // Ignore
       }
-    }, 12000);
+    }, 5000); // Reduced from 12000ms
 
     this.temporaryNodes.set('bell', { nodes: [osc, filter, lfo, env, gain], timeoutId });
   }
 
   private playSpinnerHit(): void {
+    // PERFORMANCE: Check active nodes limit
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // COSMIC CHORD - completely random chord each time
     const baseFreq = this.randomScaleFreq(261.63); // C4 base, random variation
     const chordIntervals = [1, 1.25, 1.5, 2]; // Major chord intervals
@@ -1289,10 +1229,9 @@ export class AudioEngine {
     const oscillators: (Tone.Oscillator | Tone.Gain | Tone.Filter)[] = [];
 
     notes.forEach((freq, i) => {
-      // Each note has multiple layers
+      // PERFORMANCE: Simplified to 2 layers per note (was 3)
       const fundamental = new Tone.Oscillator(freq, 'sine');
       const harmonic = new Tone.Oscillator(freq * 2.01, 'triangle');
-      const sparkle = new Tone.Oscillator(freq * 4.02, 'sine');
 
       const noteGain = new Tone.Gain(0.2);
       const filter = new Tone.Filter({
@@ -1303,14 +1242,12 @@ export class AudioEngine {
 
       fundamental.connect(filter);
       harmonic.connect(filter);
-      sparkle.connect(filter);
       filter.connect(noteGain);
 
       fundamental.start();
       harmonic.start();
-      sparkle.start();
 
-      oscillators.push(fundamental, harmonic, sparkle, filter, noteGain);
+      oscillators.push(fundamental, harmonic, filter, noteGain);
     });
 
     // Chorus for cosmic effect
@@ -1321,11 +1258,12 @@ export class AudioEngine {
       wet: 0.6
     }).start();
 
+    // PERFORMANCE: Shorter envelope
     const env = new Tone.AmplitudeEnvelope({
       attack: 0.3,
-      decay: 2,
+      decay: 1,       // Reduced from 2s
       sustain: 0.5,
-      release: 3
+      release: 2       // Reduced from 3s
     });
 
     const masterGain = new Tone.Gain(0.3);
@@ -1340,23 +1278,31 @@ export class AudioEngine {
     env.connect(masterGain);
     masterGain.connect(this.masterCompressor);
 
-    env.triggerAttackRelease('5s');
+    env.triggerAttackRelease('3s'); // Reduced from 5s
 
+    // PERFORMANCE: Faster cleanup
     const timeoutId = setTimeout(() => {
       try {
         oscillators.forEach(o => o.dispose());
         chorus.dispose();
         env.dispose();
         masterGain.dispose();
+        this.temporaryNodes.delete('spinner');
       } catch (error) {
         // Ignore
       }
-    }, 6000);
+    }, 4000); // Reduced from 6000ms
 
     this.temporaryNodes.set('spinner', { nodes: [chorus, env, masterGain], timeoutId });
   }
 
   private playRampSlide(): void {
+    // PERFORMANCE: Check active nodes limit to prevent audio glitch
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // GEOMETRIC GLISSANDO - completely random pitch and slide each time
     const startFreq = this.randomFreq(100, 400);
     const endFreq = this.randomFreq(400, 1200);
@@ -1370,21 +1316,22 @@ export class AudioEngine {
 
     // Pitch envelope for slide effect
     const pitchEnv = new Tone.FrequencyEnvelope({
-      attack: 0.1,
-      decay: 0.5,
-      sustain: 0.5,
-      release: 1,
+      attack: 0.05,
+      decay: 0.3,
+      sustain: 0.3,
+      release: 0.5,
       attackCurve: 'exponential',
       releaseCurve: 'exponential'
     });
 
     pitchEnv.connect(osc.frequency);
 
+    // PERFORMANCE: Shorter envelope for faster cleanup (same slide quality)
     const env = new Tone.AmplitudeEnvelope({
-      attack: 0.1,
-      decay: 1,
-      sustain: 0.3,
-      release: 2
+      attack: 0.05,
+      decay: 0.5,
+      sustain: 0.2,
+      release: 0.8
     });
 
     const gain = new Tone.Gain(0.4);
@@ -1395,9 +1342,10 @@ export class AudioEngine {
     gain.connect(this.masterCompressor);
 
     osc.start();
-    pitchEnv.triggerAttackRelease(endFreq, '2s'); // Slide to random frequency
-    env.triggerAttackRelease('3s');
+    pitchEnv.triggerAttackRelease(endFreq, '1s'); // Reduced from 2s
+    env.triggerAttackRelease('1.5s'); // Reduced from 3s
 
+    // PERFORMANCE: Faster cleanup (2s instead of 4s)
     const timeoutId = setTimeout(() => {
       try {
         osc.dispose();
@@ -1405,30 +1353,37 @@ export class AudioEngine {
         pitchEnv.dispose();
         env.dispose();
         gain.dispose();
+        this.temporaryNodes.delete('ramp');
       } catch (error) {
         // Ignore
       }
-    }, 4000);
+    }, 2000);
 
     this.temporaryNodes.set('ramp', { nodes: [osc, filter, pitchEnv, env, gain], timeoutId });
   }
 
   private playSpiralEffect(): void {
+    // PERFORMANCE: Check active nodes limit to prevent audio glitch
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // SPIRALING ARPEGGIO - completely random base frequency each time
     const baseFreq = this.randomScaleFreq(440); // A4 base, random variation
 
-    // Create 5 oscillators that spiral upward
+    // PERFORMANCE: Reduced from 5 to 3 oscillators (was 20+ nodes, now 12+)
     const oscillators: (Tone.Oscillator | Tone.Gain | Tone.Panner | Tone.FeedbackDelay)[] = [];
-    const frequencies = [1, 1.5, 2, 2.5, 3]; // Harmonic ratios
+    const frequencies = [1, 1.5, 2]; // Reduced harmonic ratios (was 5)
 
     frequencies.forEach((ratio, i) => {
       const osc = new Tone.Oscillator(baseFreq * ratio, 'sine');
-      const gain = new Tone.Gain(0.25);
-      const panner = new Tone.Panner(-0.8 + (i * 0.4)); // Spread across stereo field
+      const gain = new Tone.Gain(0.3); // Slightly louder to compensate for fewer oscillators
+      const panner = new Tone.Panner(-0.6 + (i * 0.6)); // Spread across stereo field
 
       // Slight delay for echo effect
-      const delay = new Tone.FeedbackDelay('8n', 0.4);
-      delay.wet.value = 0.3;
+      const delay = new Tone.FeedbackDelay('8n', 0.3);
+      delay.wet.value = 0.2; // Less wet for cleaner sound
 
       osc.connect(delay);
       delay.connect(gain);
@@ -1438,7 +1393,7 @@ export class AudioEngine {
       oscillators.push(osc, gain, panner, delay);
     });
 
-    const masterGain = new Tone.Gain(0.3);
+    const masterGain = new Tone.Gain(0.35);
 
     oscillators.forEach((o) => {
       if (o instanceof Tone.Panner) {
@@ -1448,19 +1403,27 @@ export class AudioEngine {
 
     masterGain.connect(this.masterCompressor);
 
+    // PERFORMANCE: Faster cleanup (2s instead of 3s)
     const timeoutId = setTimeout(() => {
       try {
         oscillators.forEach(o => o.dispose());
         masterGain.dispose();
+        this.temporaryNodes.delete('funnel');
       } catch (error) {
         // Ignore
       }
-    }, 3000);
+    }, 2000);
 
     this.temporaryNodes.set('funnel', { nodes: [masterGain], timeoutId });
   }
 
   private playSeesawTilt(): void {
+    // PERFORMANCE: Check active nodes limit to prevent audio glitch
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     // PLAYFUL XYLOPHONE - completely random pitch each time
     const baseFreq = this.randomScaleFreq(392); // G4 base, random variation
 
@@ -1469,12 +1432,12 @@ export class AudioEngine {
     const osc2 = new Tone.Oscillator(baseFreq * 3, 'sine');
     const osc3 = new Tone.Oscillator(baseFreq * 5, 'triangle');
 
-    // Sharp envelope for xylophone-like attack
+    // PERFORMANCE: Shorter envelope for faster cleanup (still percussive)
     const env = new Tone.AmplitudeEnvelope({
       attack: 0.001,    // Instant attack
-      decay: 0.8,
-      sustain: 0.1,
-      release: 1.5
+      decay: 0.5,       // Reduced from 0.8
+      sustain: 0.05,    // Reduced from 0.1
+      release: 0.8      // Reduced from 1.5
     });
 
     // Bright filter
@@ -1497,8 +1460,9 @@ export class AudioEngine {
     osc2.start();
     osc3.start();
 
-    env.triggerAttackRelease('2s');
+    env.triggerAttackRelease('1s'); // Reduced from 2s
 
+    // PERFORMANCE: Faster cleanup (1.5s instead of 3s)
     const timeoutId = setTimeout(() => {
       try {
         osc1.dispose();
@@ -1507,30 +1471,39 @@ export class AudioEngine {
         filter.dispose();
         env.dispose();
         gain.dispose();
+        this.temporaryNodes.delete('seesaw');
       } catch (error) {
         // Ignore
       }
-    }, 3000);
+    }, 1500);
 
     this.temporaryNodes.set('seesaw', { nodes: [osc1, osc2, osc3, filter, env, gain], timeoutId });
   }
 
   private playDefaultCollision(): void {
+    // PERFORMANCE: Check active nodes limit to prevent audio glitch
+    const activeCount = this.temporaryNodes.size;
+    if (activeCount >= 24) {
+      return; // Skip if too many sounds active
+    }
+
     const randomFreq = this.randomScaleFreq(528); // C5 base, random variation
     const synth = new Tone.Synth({
       oscillator: { type: 'triangle' },
-      envelope: { attack: 0.1, decay: 0.5, sustain: 0.3, release: 1 }
+      envelope: { attack: 0.05, decay: 0.3, sustain: 0.2, release: 0.5 } // Shorter envelope
     }).toDestination();
 
-    synth.triggerAttackRelease(randomFreq, '1.5s');
+    synth.triggerAttackRelease(randomFreq, '0.8s'); // Reduced from 1.5s
 
+    // PERFORMANCE: Faster cleanup (1s instead of 2s)
     const timeoutId = setTimeout(() => {
       try {
         synth.dispose();
+        this.temporaryNodes.delete('default');
       } catch (error) {
         // Silently handle disposal errors
       }
-    }, 2000);
+    }, 1000);
 
     this.temporaryNodes.set('default', { nodes: [synth], timeoutId });
   }
@@ -1587,22 +1560,10 @@ export class AudioEngine {
 
   destroy(): void {
     try {
-      // Dispose drone layers
-      this.droneLayers.forEach(layer => {
-        try {
-          layer.oscillator.stop();
-          layer.lfo.stop();
-          layer.oscillator.dispose();
-          layer.filter.dispose();
-          layer.gain.dispose();
-          layer.lfo.dispose();
-        } catch (error) {
-          // Silently handle disposal errors
-        }
-      });
-      this.droneLayers = [];
-      this.droneEnabled = false;
-      this.collisionIntensity = 0;
+      // Dispose echo delay
+      if (this.echoDelay) {
+        this.echoDelay.dispose();
+      }
 
       // Reset harmonic system
       this.harmonyIndex = 0;

@@ -24,6 +24,7 @@ interface Physics3DCanvasProps {
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
   onCollision?: (event: any) => void;
   onSelectionChange?: (nodeId: string | null) => void;
+  onModuleTypeChange?: (moduleType: string) => void;
   selectedNodeType?: string;
 }
 
@@ -38,14 +39,12 @@ const Ripple = React.memo(({ position, color = "#FF4757", onComplete }: RipplePr
   const meshRef = useRef<THREE.Mesh>(null);
   const [life, setLife] = useState(1); // 1 to 0
   const rippleDuration = 1.0; // seconds
+  const completedRef = useRef(false);
 
   useFrame((_state, delta) => {
     const decay = delta / rippleDuration;
     setLife(prev => {
       const newLife = Math.max(0, prev - decay);
-      if (newLife <= 0 && onComplete) {
-        onComplete();
-      }
       return newLife;
     });
 
@@ -53,6 +52,13 @@ const Ripple = React.memo(({ position, color = "#FF4757", onComplete }: RipplePr
     if (meshRef.current) {
       const scale = 1 + (1 - life) * 3; // Expand from 1x to 4x
       meshRef.current.scale.set(scale, scale, scale);
+    }
+
+    // Call onComplete after state update (not in setState)
+    if (life <= 0 && !completedRef.current && onComplete) {
+      completedRef.current = true;
+      // Defer to next frame to avoid setState in render
+      setTimeout(() => onComplete(), 0);
     }
   });
 
@@ -142,70 +148,6 @@ const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: 
 
 ComboDisplay.displayName = 'ComboDisplay';
 
-// Rhythm Indicator Component
-const RhythmIndicator = React.memo(({ enabled, quality, suggestedDropTime }: {
-  enabled: boolean;
-  quality: number;
-  suggestedDropTime: number;
-}) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [pulse, setPulse] = useState(0);
-
-  useFrame(() => {
-    if (!enabled) return;
-
-    const now = Date.now();
-    const timeUntilDrop = suggestedDropTime - now;
-
-    // Pulse when approaching suggested drop time
-    if (timeUntilDrop > 0 && timeUntilDrop < 500) {
-      const intensity = 1 - (timeUntilDrop / 500);
-      setPulse(intensity);
-    } else {
-      setPulse(0);
-    }
-  });
-
-  if (!enabled) return null;
-
-  // Color based on rhythm quality
-  const color = quality > 0.8 ? '#00FF00' : quality > 0.5 ? '#FFFF00' : '#FF0000';
-
-  return (
-    <group position={[0, 12, 0]}>
-      {/* Rhythm quality ring */}
-      <mesh ref={meshRef}>
-        <torusGeometry args={[2, 0.1, 16, 100]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={0.5 + pulse * 0.5}
-          transparent
-          opacity={0.6 + pulse * 0.4}
-        />
-      </mesh>
-
-      {/* Quality indicator text */}
-      <Text
-        fontSize={0.5}
-        color={color}
-        anchorX="center"
-        anchorY="middle"
-        position={[0, 0, 0]}
-      >
-        {`Rhythm: ${Math.round(quality * 100)}%`}
-        <meshStandardMaterial
-          color={color}
-          transparent
-          opacity={0.8}
-        />
-      </Text>
-    </group>
-  );
-});
-
-RhythmIndicator.displayName = 'RhythmIndicator';
-
 // Camera Flow Component - Smooth camera follow with floating motion
 const CameraFlow = React.memo(({ marbles }: { marbles: any[] }) => {
   const { camera } = useThree();
@@ -249,71 +191,6 @@ const CameraFlow = React.memo(({ marbles }: { marbles: any[] }) => {
 });
 
 CameraFlow.displayName = 'CameraFlow';
-
-// Breathing Guide Component - Subtle breathing animation for meditative state
-const BreathingGuide = React.memo(({ enabled }: { enabled: boolean }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  const ringRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    if (!enabled || !groupRef.current || !ringRef.current) return;
-
-    // Breathing cycle: 4 seconds in, 4 seconds out
-    const time = state.clock.elapsedTime;
-    const cycleDuration = 8; // 8 seconds total (4 in, 4 out)
-    const phase = (time % cycleDuration) / cycleDuration;
-
-    // Breathing curve: smooth in and out
-    let scale: number;
-    if (phase < 0.5) {
-      // Inhale (0-4 seconds)
-      const inhalePhase = phase * 2; // 0-1
-      scale = 1 + Math.sin(inhalePhase * Math.PI / 2) * 0.15; // Expand to 1.15x
-    } else {
-      // Exhale (4-8 seconds)
-      const exhalePhase = (phase - 0.5) * 2; // 0-1
-      scale = 1.15 - Math.sin(exhalePhase * Math.PI / 2) * 0.15; // Contract to 1x
-    }
-
-    // Apply scale to ring
-    ringRef.current.scale.setScalar(scale);
-
-    // Subtle rotation
-    groupRef.current.rotation.y += 0.001;
-  });
-
-  if (!enabled) return null;
-
-  return (
-    <group ref={groupRef} position={[0, 3, 0]}>
-      {/* Breathing ring */}
-      <mesh ref={ringRef}>
-        <torusGeometry args={[1.5, 0.05, 16, 100]} />
-        <meshStandardMaterial
-          color="#4ECDC4"
-          emissive="#4ECDC4"
-          emissiveIntensity={0.3}
-          transparent
-          opacity={0.4}
-        />
-      </mesh>
-
-      {/* Inner ring */}
-      <mesh>
-        <torusGeometry args={[1, 0.03, 16, 100]} />
-        <meshStandardMaterial
-          color="#4ECDC4"
-          emissive="#4ECDC4"
-          emissiveIntensity={0.2}
-          transparent
-          opacity={0.3}
-        />
-      </mesh>
-    </group>
-  );
-});
-
-BreathingGuide.displayName = 'BreathingGuide';
 
 // Completion Celebration Component
 const CompletionCelebration = React.memo(({ enabled, onComplete }: {
@@ -589,17 +466,17 @@ const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
       <pointLight
         position={[0, 0, 0]}
         intensity={unlocks?.goldenMarble ? 0.8 : 0.5}
-        color={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
+        color="#FFFFFF"
         distance={2}
         decay={2}
       />
       <Sphere ref={ref as any} args={[0.3, 32, 32]} castShadow>
         <meshStandardMaterial
-          color={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
+          color={unlocks?.goldenMarble ? "#E0E0E0" : "#8A8A8A"}
           metalness={0.9}
           roughness={unlocks?.goldenMarble ? 0.05 : 0.1}
-          emissive={unlocks?.goldenMarble ? "#FFD700" : "#FF4757"}
-          emissiveIntensity={unlocks?.goldenMarble ? 1.2 : 0.8}
+          emissive={unlocks?.goldenMarble ? "#E0E0E0" : "#8A8A8A"}
+          emissiveIntensity={unlocks?.goldenMarble ? 0.4 : 0.2}
         />
       </Sphere>
     </group>
@@ -620,8 +497,8 @@ const Ramp = React.memo(({ position, nodeId, params }: any) => {
     <group ref={ref as any} rotation={[0, 0, (params.angle || 15) * Math.PI / 180]}>
       <Box args={[4, 0.2, 2]} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#8B4513"
-          roughness={0.8}
+          color="#3A3A3A"
+          roughness={0.9}
           metalness={0.1}
         />
       </Box>
@@ -661,11 +538,11 @@ const Bumper = React.memo(({ position, nodeId, params }: any) => {
     <group ref={ref as any}>
       <Cylinder args={[1.2, 1.2, 0.6]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={hit ? "#FFD700" : "#4ECDC4"}
+          color={hit ? "#FFFFFF" : "#3A3A3A"}
           metalness={0.8}
           roughness={0.2}
-          emissive={hit ? "#FFD700" : "#4ECDC4"}
-          emissiveIntensity={hit ? 0.8 : 0.2}
+          emissive={hit ? "#FFFFFF" : "#3A3A3A"}
+          emissiveIntensity={hit ? 0.3 : 0.1}
         />
       </Cylinder>
       <Text
@@ -675,7 +552,7 @@ const Bumper = React.memo(({ position, nodeId, params }: any) => {
         anchorX="center"
         anchorY="middle"
       >
-        🥁 {params.pitch || 'C4'}
+        ◉ {params.pitch || 'C4'}
       </Text>
     </group>
   );
@@ -704,11 +581,11 @@ const Chime = React.memo(({ position, nodeId, params }: any) => {
     <group ref={ref as any}>
       <Cylinder args={[0.15, 0.15, 3]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={chiming ? "#FF6B9D" : "#C44569"}
+          color={chiming ? "#E0E0E0" : "#4A4A4A"}
           metalness={0.9}
           roughness={0.1}
-          emissive={chiming ? "#FF6B9D" : "#C44569"}
-          emissiveIntensity={chiming ? 0.7 : 0.2}
+          emissive={chiming ? "#E0E0E0" : "#4A4A4A"}
+          emissiveIntensity={chiming ? 0.3 : 0.1}
         />
       </Cylinder>
       <Text
@@ -719,7 +596,7 @@ const Chime = React.memo(({ position, nodeId, params }: any) => {
         anchorY="middle"
         rotation={[0, 0, Math.PI / 2]}
       >
-        ♪ {params.note || 'A4'}
+        ✧ {params.note || 'A4'}
       </Text>
     </group>
   );
@@ -727,13 +604,13 @@ const Chime = React.memo(({ position, nodeId, params }: any) => {
 Chime.displayName = 'Chime';
 
 // Spinner Component - Rotating wheel with multiple note triggers
-const Spinner = React.memo(({ position, nodeId, params }: any) => {
+const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [ref] = useCylinder(() => ({
     position,
     args: [1.5, 1.5, 0.3],
     type: 'Static',
-    userData: { nodeId }
+    userData: { nodeId, type: 'spinner' }
   }));
 
   useFrame(() => {
@@ -742,15 +619,37 @@ const Spinner = React.memo(({ position, nodeId, params }: any) => {
     }
   });
 
+  // Add collision detection for sound
+  useEffect(() => {
+    if (ref.current && ref.current.api) {
+      const handleCollision = (e: any) => {
+        console.log('Spinner collision!');
+        if (onCollide) {
+          onCollide({
+            nodeId,
+            velocity: e.contact?.impactVelocity || 5,
+            position: e.contact?.contactPoint || { x: 0, y: 0, z: 0 },
+            timestamp: Date.now()
+          });
+        }
+      };
+
+      const collisionHandler = ref.current.api.addEventListener('collide', handleCollision);
+      return () => {
+        ref.current?.api?.removeEventListener('collide', collisionHandler);
+      };
+    }
+  }, [nodeId, onCollide]);
+
   return (
     <group ref={ref as any}>
       <Cylinder ref={meshRef} args={[1.5, 1.5, 0.3]} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#20BF6B"
+          color="#5A5A5A"
           metalness={0.6}
           roughness={0.4}
-          emissive="#20BF6B"
-          emissiveIntensity={0.3}
+          emissive="#5A5A5A"
+          emissiveIntensity={0.1}
         />
       </Cylinder>
       <Text
@@ -760,7 +659,7 @@ const Spinner = React.memo(({ position, nodeId, params }: any) => {
         anchorX="center"
         anchorY="middle"
       >
-        🌀 SPIN
+        ∞
       </Text>
     </group>
   );
@@ -780,11 +679,11 @@ const Funnel = React.memo(({ position, nodeId }: any) => {
     <group ref={ref as any}>
       <Cylinder args={[2, 0.3, 2]} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#5A67D8"
+          color="#4A4A4A"
           metalness={0.7}
           roughness={0.3}
-          emissive="#5A67D8"
-          emissiveIntensity={0.2}
+          emissive="#4A4A4A"
+          emissiveIntensity={0.1}
         />
       </Cylinder>
       <Text
@@ -794,7 +693,7 @@ const Funnel = React.memo(({ position, nodeId }: any) => {
         anchorX="center"
         anchorY="middle"
       >
-        🌪️ SPIRAL
+        ◈
       </Text>
     </group>
   );
@@ -814,11 +713,11 @@ const Seesaw = React.memo(({ position, nodeId }: any) => {
     <group ref={ref as any}>
       <Box args={[3, 0.2, 0.8]} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#FD79A8"
+          color="#6A6A6A"
           metalness={0.5}
           roughness={0.5}
-          emissive="#FD79A8"
-          emissiveIntensity={0.2}
+          emissive="#6A6A6A"
+          emissiveIntensity={0.1}
         />
       </Box>
       <Text
@@ -828,7 +727,7 @@ const Seesaw = React.memo(({ position, nodeId }: any) => {
         anchorX="center"
         anchorY="middle"
       >
-        ⚖️ BALANCE
+        ∞
       </Text>
     </group>
   );
@@ -857,11 +756,11 @@ const Bell = React.memo(({ position, nodeId }: any) => {
     <group ref={ref as any}>
       <Cylinder args={[1, 1.5, 2]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={ringing ? "#F39C12" : "#E67E22"}
+          color={ringing ? "#D0D0D0" : "#7A7A7A"}
           metalness={0.9}
           roughness={0.1}
-          emissive={ringing ? "#F39C12" : "#E67E22"}
-          emissiveIntensity={ringing ? 0.8 : 0.3}
+          emissive={ringing ? "#D0D0D0" : "#7A7A7A"}
+          emissiveIntensity={ringing ? 0.3 : 0.1}
         />
       </Cylinder>
       <Text
@@ -871,7 +770,7 @@ const Bell = React.memo(({ position, nodeId }: any) => {
         anchorX="center"
         anchorY="middle"
       >
-        🔔
+        ❖
       </Text>
     </group>
   );
@@ -904,7 +803,7 @@ const Ground = React.memo(() => {
 Ground.displayName = 'Ground';
 
 // 3D Scene Component
-const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, rhythmLockEnabled }: any) => {
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate }: any) => {
   const [marbles, setMarbles] = useState<any[]>([]);
   const [ripples, setRipples] = useState<Array<{ id: string; position: [number, number, number]; color: string }>>([]);
 
@@ -929,17 +828,6 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     maxCombo: 0,
     totalScore: 0
   });
-
-  // Rhythm Lock System
-  const [rhythmLock, setRhythmLock] = useState({
-    enabled: false,
-    beatsPerMinute: 60, // 1 second intervals
-    lastBeatTime: 0,
-    collisionRhythms: [] as number[], // Time intervals between collisions
-    suggestedDropTime: 0,
-    rhythmQuality: 0 // 0-1, how well collisions match the rhythm
-  });
-  const idealInterval = 60000 / rhythmLock.beatsPerMinute; // ms between beats
 
   // Pythagora Switch Completion System
   const [completionCelebration, setCompletionCelebration] = useState({
@@ -980,28 +868,6 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
   const handleCollision = (event: any) => {
     const now = Date.now();
     const timeSinceLastCollision = now - lastCollisionTime;
-
-    // Track rhythm if enabled
-    if (rhythmLock.enabled && lastCollisionTime > 0) {
-      setRhythmLock(prev => {
-        const newRhythms = [...prev.collisionRhythms, timeSinceLastCollision].slice(-10); // Keep last 10 intervals
-
-        // Calculate rhythm quality (how close to ideal interval)
-        const avgInterval = newRhythms.reduce((a, b) => a + b, 0) / newRhythms.length;
-        const quality = 1 - Math.min(1, Math.abs(avgInterval - idealInterval) / idealInterval);
-
-        // Calculate next suggested drop time
-        const nextBeat = now + idealInterval;
-
-        return {
-          ...prev,
-          lastBeatTime: now,
-          collisionRhythms: newRhythms,
-          suggestedDropTime: nextBeat,
-          rhythmQuality: quality
-        };
-      });
-    }
 
     // Check if combo should continue or reset
     if (timeSinceLastCollision < comboTimeoutMs) {
@@ -1159,11 +1025,6 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     onStatsUpdate?.(sessionStats);
   }, [sessionStats, onStatsUpdate]);
 
-  // Sync rhythm lock enabled state
-  useEffect(() => {
-    setRhythmLock(prev => ({ ...prev, enabled: rhythmLockEnabled }));
-  }, [rhythmLockEnabled]);
-
   // Track marble completions and cleanup (prevent memory overflow)
   useEffect(() => {
     const completionThreshold = -5; // Y position below ground
@@ -1227,7 +1088,7 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
       case 'chime':
         return <Chime key={node.id} position={position} nodeId={node.id} params={node.params} />;
       case 'spinner':
-        return <Spinner key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Spinner key={node.id} position={position} nodeId={node.id} params={node.params} onCollide={handleCollision} />;
       case 'funnel':
         return <Funnel key={node.id} position={position} nodeId={node.id} params={node.params} />;
       case 'seesaw':
@@ -1324,16 +1185,6 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         multiplier={comboMultiplier}
       />
 
-      {/* Rhythm Indicator */}
-      <RhythmIndicator
-        enabled={rhythmLock.enabled}
-        quality={rhythmLock.rhythmQuality}
-        suggestedDropTime={rhythmLock.suggestedDropTime}
-      />
-
-      {/* Breathing Guide */}
-      <BreathingGuide enabled={rhythmLock.enabled} />
-
       {/* Completion Celebration */}
       <CompletionCelebration
         enabled={completionCelebration.enabled}
@@ -1376,11 +1227,12 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   nodes,
   onNodeAdd,
   onCollision,
+  onModuleTypeChange,
   selectedNodeType = 'marble'
 }) => {
   const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-  const [droneEnabled, setDroneEnabled] = useState(true);
+  const [echoMode, setEchoMode] = useState<'off' | 'short' | 'long'>('off');
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -1390,9 +1242,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     maxCombo: 0,
     totalScore: 0
   });
-
-  // Rhythm lock state for UI control
-  const [rhythmLockEnabled, setRhythmLockEnabled] = useState(false);
 
   useEffect(() => {
     const initializeBridge = async () => {
@@ -1426,11 +1275,16 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     }
   };
 
-  const handleDroneToggle = () => {
-    const newDroneState = !droneEnabled;
-    setDroneEnabled(newDroneState);
+  const handleEchoModeChange = (mode: 'off' | 'short' | 'long') => {
+    setEchoMode(mode);
     if (synthBridge) {
-      synthBridge.setDroneEnabled(newDroneState);
+      synthBridge.setEchoMode(mode);
+    }
+  };
+
+  const handleModuleSelect = (moduleType: string) => {
+    if (onModuleTypeChange) {
+      onModuleTypeChange(moduleType);
     }
   };
 
@@ -1438,9 +1292,18 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     if (event.key === 'm' || event.key === 'M') {
       handleMute();
     } else if (event.key === 'd' || event.key === 'D') {
-      handleDroneToggle();
-    } else if (event.key === 'r' || event.key === 'R') {
-      setRhythmLockEnabled(!rhythmLockEnabled);
+      // Cycle through echo modes: off → short → long → off
+      const modes: Array<'off' | 'short' | 'long'> = ['off', 'short', 'long'];
+      const currentIndex = modes.indexOf(echoMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      handleEchoModeChange(modes[nextIndex]);
+    } else if (event.key >= '1' && event.key <= '8') {
+      // Module selection with number keys 1-8
+      const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'];
+      const index = parseInt(event.key) - 1;
+      if (index >= 0 && index < moduleTypes.length) {
+        handleModuleSelect(moduleTypes[index]);
+      }
     }
   };
 
@@ -1485,7 +1348,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               selectedNodeType={selectedNodeType}
               onNodeAdd={onNodeAdd}
               onStatsUpdate={(stats: any) => setDisplayStats(stats)}
-              rhythmLockEnabled={rhythmLockEnabled}
             />
           </Physics>
         </Suspense>
@@ -1544,97 +1406,240 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       <MUIBox
         sx={{
           position: 'absolute',
-          top: 16,
-          right: 16,
+          top: 20,
+          right: 20,
           display: 'flex',
-          gap: 1
+          gap: 0.5,
+          flexDirection: 'column'
         }}
         role="toolbar"
         aria-label="Audio controls"
       >
+        {/* Mute Control */}
         <Tooltip title={isMuted ? "Unmute (Press M)" : "Mute (Press M)"}>
           <IconButton
             onClick={handleMute}
             sx={{
-              background: 'rgba(26, 26, 46, 0.9)',
-              color: 'white',
-              '&:hover': { background: 'rgba(26, 26, 46, 1)' }
+              background: '#000000',
+              border: '1px solid #333333',
+              color: '#FFFFFF',
+              width: 48,
+              height: 48,
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF'
+              }
             }}
             aria-label={isMuted ? "Unmute audio" : "Mute audio"}
           >
-            {isMuted ? <VolumeOff /> : <VolumeUp />}
+            <Box sx={{ fontSize: 20 }}>{isMuted ? '◉' : '◎'}</Box>
           </IconButton>
         </Tooltip>
-        <Tooltip title={droneEnabled ? "Disable Drone (Press D)" : "Enable Drone (Press D)"}>
+
+        {/* Echo Mode Controls */}
+        <Tooltip title="Short Echo (200ms delay)">
           <IconButton
-            onClick={handleDroneToggle}
+            onClick={() => handleEchoModeChange('short')}
             sx={{
-              background: droneEnabled ? 'rgba(0, 191, 166, 0.9)' : 'rgba(26, 26, 46, 0.9)',
-              color: 'white',
-              '&:hover': { background: droneEnabled ? 'rgba(0, 191, 166, 1)' : 'rgba(26, 26, 46, 1)' }
+              background: echoMode === 'short' ? '#0A0A0A' : '#000000',
+              border: echoMode === 'short' ? '1px solid #FFFFFF' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: 48,
+              height: 48,
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF'
+              }
             }}
-            aria-label={droneEnabled ? "Disable ambient drone" : "Enable ambient drone"}
+            aria-label="Enable short echo mode"
           >
-            <GraphicEq />
+            <Box sx={{ fontSize: 16 }}>∿</Box>
           </IconButton>
         </Tooltip>
-        <Tooltip title={rhythmLockEnabled ? "Disable Rhythm Lock (Press R)" : "Enable Rhythm Lock (Press R)"}>
+
+        <Tooltip title="Long Echo (800ms delay)">
           <IconButton
-            onClick={() => setRhythmLockEnabled(!rhythmLockEnabled)}
+            onClick={() => handleEchoModeChange('long')}
             sx={{
-              background: rhythmLockEnabled ? 'rgba(156, 39, 176, 0.9)' : 'rgba(26, 26, 46, 0.9)',
-              color: 'white',
-              '&:hover': { background: rhythmLockEnabled ? 'rgba(156, 39, 176, 1)' : 'rgba(26, 26, 46, 1)' }
+              background: echoMode === 'long' ? '#0A0A0A' : '#000000',
+              border: echoMode === 'long' ? '1px solid #FFFFFF' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: 48,
+              height: 48,
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF'
+              }
             }}
-            aria-label={rhythmLockEnabled ? "Disable rhythm lock" : "Enable rhythm lock"}
+            aria-label="Enable long echo mode"
           >
-            <AccessTime />
+            <Box sx={{ fontSize: 18 }}>∿∿</Box>
           </IconButton>
         </Tooltip>
+
+        <Tooltip title="Echo Off">
+          <IconButton
+            onClick={() => handleEchoModeChange('off')}
+            sx={{
+              background: echoMode === 'off' ? '#0A0A0A' : '#000000',
+              border: echoMode === 'off' ? '1px solid #FFFFFF' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: 48,
+              height: 48,
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF'
+              }
+            }}
+            aria-label="Disable echo"
+          >
+            <Box sx={{ fontSize: 20 }}>○</Box>
+          </IconButton>
+        </Tooltip>
+      </MUIBox>
+
+      {/* Module Selector - Sacred Geometry Buttons */}
+      <MUIBox
+        sx={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
+          background: '#000000',
+          border: '1px solid #333333',
+          borderRadius: 1,
+          padding: 2,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
+          maxWidth: 'none'
+        }}
+        role="toolbar"
+        aria-label="Module selector"
+      >
+        <Typography variant="caption" sx={{
+          fontSize: '0.7rem',
+          letterSpacing: '0.15em',
+          color: '#888888',
+          textAlign: 'center',
+          mb: 0.5
+        }}>
+          MODULES (1-8)
+        </Typography>
+        <MUIBox sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1.5,
+          justifyContent: 'center',
+          minWidth: 320
+        }}>
+          {[
+            { type: 'marble', symbol: '◉', name: 'ORIGIN', key: '1' },
+            { type: 'ramp', symbol: '△', name: 'SLOPE', key: '2' },
+            { type: 'bumper', symbol: '◉', name: 'BASE', key: '3' },
+            { type: 'chime', symbol: '✧', name: 'HEX', key: '4' },
+            { type: 'spinner', symbol: '∞', name: 'SPIRAL', key: '5' },
+            { type: 'funnel', symbol: '◈', name: 'PORTAL', key: '6' },
+            { type: 'seesaw', symbol: '∞', name: 'BALANCE', key: '7' },
+            { type: 'bell', symbol: '❖', name: 'AXIS', key: '8' }
+          ].map((module) => (
+            <Tooltip
+              key={module.type}
+              title={`${module.name} (Press ${module.key})`}
+              arrow
+            >
+              <IconButton
+                onClick={() => handleModuleSelect(module.type)}
+                sx={{
+                  background: selectedNodeType === module.type ? '#0A0A0A' : '#000000',
+                  border: selectedNodeType === module.type ? '1px solid #FFFFFF' : '1px solid #333333',
+                  color: '#FFFFFF',
+                  width: 64,
+                  height: 64,
+                  minWidth: 64,
+                  padding: 0,
+                  flexDirection: 'column',
+                  gap: 0,
+                  '&:hover': {
+                    background: '#0A0A0A',
+                    border: '1px solid #FFFFFF'
+                  }
+                }}
+                aria-label={`Select ${module.name} module`}
+                aria-pressed={selectedNodeType === module.type}
+              >
+                <Box sx={{
+                  fontSize: '1.4rem',
+                  lineHeight: 1,
+                  fontWeight: selectedNodeType === module.type ? 600 : 400,
+                  height: 24
+                }}>
+                  {module.symbol}
+                </Box>
+                <Typography
+                  sx={{
+                    fontSize: '0.08rem !important',
+                    letterSpacing: '0.05em',
+                    color: selectedNodeType === module.type ? '#FFFFFF' : '#888888',
+                    lineHeight: 1,
+                    fontWeight: selectedNodeType === module.type ? 500 : 400
+                  }}
+                >
+                  {module.name}
+                </Typography>
+              </IconButton>
+            </Tooltip>
+          ))}
+        </MUIBox>
       </MUIBox>
 
       {/* Session Stats Display */}
       <MUIBox
         sx={{
           position: 'absolute',
-          bottom: 16,
-          left: 16,
-          background: 'rgba(26, 26, 46, 0.9)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: 2,
-          padding: 2,
-          color: 'white',
-          minWidth: 150
+          bottom: 20,
+          left: 20,
+          background: '#000000',
+          border: '1px solid #333333',
+          borderRadius: 1,
+          padding: 1.5,
+          color: '#FFFFFF',
+          minWidth: 120,
+          opacity: 0.8
         }}
         role="status"
         aria-live="polite"
       >
-        <Typography variant="caption" sx={{ display: 'block', opacity: 0.7, mb: 0.5 }}>
-          Session Stats
+        <Typography variant="caption" sx={{
+          display: 'block',
+          color: '#666666',
+          mb: 1,
+          fontSize: '0.7rem',
+          letterSpacing: '0.15em'
+        }}>
+          SESSION
         </Typography>
         <MUIBox sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
-              Score:
+            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
+              ○
             </Typography>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#FFD700' }}>
+            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
               {displayStats.totalScore}
             </Typography>
           </MUIBox>
           <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
-              Hits:
+            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
+              ◈
             </Typography>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold' }}>
+            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
               {displayStats.totalCollisions}
             </Typography>
           </MUIBox>
           <MUIBox sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
-              Max Combo:
+            <Typography sx={{ fontSize: '0.7rem', color: '#CCCCCC' }}>
+              ❖
             </Typography>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#00BFA6' }}>
+            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
               {displayStats.maxCombo}
             </Typography>
           </MUIBox>
@@ -1645,30 +1650,47 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       <MUIBox
         sx={{
           position: 'absolute',
-          bottom: 16,
-          right: 16,
-          background: 'rgba(26, 26, 46, 0.9)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: 2,
-          padding: 2,
-          color: 'white'
+          bottom: 20,
+          right: 20,
+          background: '#000000',
+          border: '1px solid #333333',
+          borderRadius: 1,
+          padding: 1.5,
+          color: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
         }}
         role="status"
         aria-live="polite"
       >
-        <MUIBox sx={{ fontSize: '0.875rem', opacity: 0.7 }}>
-          Selected:
+        <MUIBox sx={{
+          fontSize: '0.75rem',
+          color: '#CCCCCC',
+          letterSpacing: '0.1em'
+        }}>
+          {selectedNodeType === 'marble' ? '◉' :
+           selectedNodeType === 'ramp' ? '△' :
+           selectedNodeType === 'bumper' ? '◉' :
+           selectedNodeType === 'chime' ? '✧' :
+           selectedNodeType === 'spinner' ? '∞' :
+           selectedNodeType === 'funnel' ? '◈' :
+           selectedNodeType === 'seesaw' ? '∞' :
+           selectedNodeType === 'bell' ? '❖' : selectedNodeType}
         </MUIBox>
-        <MUIBox sx={{ fontWeight: 'bold', color: '#00BFA6' }}>
-          {selectedNodeType === 'marble' ? '🔴 Marble' :
-           selectedNodeType === 'ramp' ? '📐 Ramp' :
-           selectedNodeType === 'bumper' ? '🥁 Bumper' :
-           selectedNodeType === 'chime' ? '🎵 Chime' :
-           selectedNodeType === 'spinner' ? '🌀 Spinner' :
-           selectedNodeType === 'funnel' ? '🌪️ Funnel' :
-           selectedNodeType === 'seesaw' ? '⚖️ Seesaw' :
-           selectedNodeType === 'bell' ? '🔔 Bell' : selectedNodeType}
+        <MUIBox sx={{
+          fontSize: '0.75rem',
+          color: '#CCCCCC',
+          letterSpacing: '0.1em'
+        }}>
+          {selectedNodeType === 'marble' ? 'ORIGIN' :
+           selectedNodeType === 'ramp' ? 'SLOPE' :
+           selectedNodeType === 'bumper' ? 'BASE' :
+           selectedNodeType === 'chime' ? 'HEX' :
+           selectedNodeType === 'spinner' ? 'SPIRAL' :
+           selectedNodeType === 'funnel' ? 'PORTAL' :
+           selectedNodeType === 'seesaw' ? 'BALANCE' :
+           selectedNodeType === 'bell' ? 'AXIS' : selectedNodeType.toUpperCase()}
         </MUIBox>
       </MUIBox>
     </MUIBox>

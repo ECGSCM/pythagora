@@ -31,9 +31,6 @@ export class SynthBridge3D {
 
     await this.audioEngine.start();
 
-    // Initialize ambient drone system for hypnotic background
-    this.audioEngine.initializeDrone();
-
     this.isInitialized = true;
   }
 
@@ -110,28 +107,27 @@ export class SynthBridge3D {
     this.audioEngine.stopHealthFrequency();
   }
 
-  // ==================== DRONE CONTROL ====================
+  // ==================== ECHO MODE CONTROL ====================
 
   /**
-   * Enable or disable the ambient drone system
+   * Set the echo mode (off, short, or long)
    */
-  setDroneEnabled(enabled: boolean): void {
-    this.audioEngine.setDroneEnabled(enabled);
+  setEchoMode(mode: 'off' | 'short' | 'long'): void {
+    this.audioEngine.setEchoMode(mode);
   }
 
   /**
-   * Set the overall drone volume
-   * @param volume Volume in dB (-60 to 0)
+   * Get current echo mode
    */
-  setDroneVolume(volume: number): void {
-    this.audioEngine.setDroneVolume(volume);
+  getEchoMode(): 'off' | 'short' | 'long' {
+    return this.audioEngine.getEchoMode();
   }
 
   /**
-   * Get current drone status
+   * Cycle through echo modes: off → short → long → off
    */
-  getDroneStatus(): { enabled: boolean; intensity: number } {
-    return this.audioEngine.getDroneStatus();
+  cycleEchoMode(): 'off' | 'short' | 'long' {
+    return this.audioEngine.cycleEchoMode();
   }
 
   // ==================== HARMONY CONTROL ====================

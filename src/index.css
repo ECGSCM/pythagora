@@ -1,11 +1,14 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* Sacred Monochrome Theme - Pythagora Synth */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@300;400;500;600&display=swap');
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+:root {
+  font-family: 'Cinzel', 'Trajan', 'Times New Roman', serif;
+  line-height: 1.5;
+  font-weight: 300;
+
+  /* Sacred monochrome palette */
+  color: #FFFFFF;
+  background-color: #000000;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,56 +16,211 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  padding: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow: hidden;
+  background: #000000;
+}
+
+/* Sacred pulse animation for geometry symbols */
+@keyframes sacred-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
+  }
+}
+
+/* Cosmic twinkle for stars */
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+    box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.4);
+  }
+}
+
+/* Sacred glow effect */
+@keyframes sacred-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
+  }
+}
+
+/* Subtle breathing animation */
+@keyframes sacred-breath {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+}
+
+/* Apply sacred pulse to geometry symbols */
+.sacred-geometry {
+  animation: sacred-pulse 3s ease-in-out infinite;
+}
+
+.sacred-pulse {
+  animation: sacred-pulse 3s ease-in-out infinite;
+}
+
+/* Button styles */
+button {
+  border-radius: 2px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 0.875rem;
+  font-weight: 400;
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background-color: transparent;
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  border-color: #FFFFFF;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4));
+}
+
+button:focus,
+button:focus-visible {
+  outline: none;
+  border-color: #FFFFFF;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+/* Link styles */
+a {
+  font-weight: 400;
+  color: #CCCCCC;
+  text-decoration: none;
+  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
+}
+
+a:hover {
+  color: #FFFFFF;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  color: #FFFFFF;
 }
 
 h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  font-size: 2rem;
+  line-height: 1.2;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.3;
 }
 
+p {
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  line-height: 1.8;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Utility classes for sacred theme */
+.sacred-border {
+  border: 1px solid #333333;
+}
+
+.sacred-border-light {
+  border: 1px solid #666666;
+}
+
+.sacred-text-glow {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.sacred-box-glow {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+/* Canvas styling */
+canvas {
+  display: block;
+  outline: none;
+}
+
+/* Selection styling */
+::selection {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+::-moz-selection {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
+}
+
+/* Disable focus outline when using mouse */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Dark mode only - no light mode support */
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+    /* Override to always use dark theme */
+    color: #FFFFFF;
+    background-color: #000000;
   }
 }
