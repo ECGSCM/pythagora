@@ -1303,111 +1303,148 @@ export class AudioEngine {
       return; // Skip if too many sounds active
     }
 
-    // GLITCHY SINE SLIDE - digital artifacts with pure sine base
-    const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // C4, D4, E4, G4, A4, C5
-    const startIndex = Math.floor(Math.random() * (pentatonicScale.length - 1));
-    const endIndex = Math.min(startIndex + 2, pentatonicScale.length - 1);
+    // SUIKINKUTSU - Japanese underground water harp
+    // Pure sine with long metallic resonance, like water dripping into earth cavity
 
-    const startFreq = pentatonicScale[startIndex];
-    const endFreq = pentatonicScale[endIndex] * 2;
+    // Use pentatonic scale with lower frequencies for deeper resonance
+    const pentatonicScale = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63]; // C3, D3, E3, G3, A3, C4
+    const noteIndex = Math.floor(Math.random() * pentatonicScale.length);
+    const baseFreq = pentatonicScale[noteIndex];
 
-    // Multiple detuned sine oscillators for glitchy beating
-    const osc1 = new Tone.Oscillator(startFreq, 'sine');
-    const osc2 = new Tone.Oscillator(startFreq * 1.003, 'sine'); // Very close detune
-    const osc3 = new Tone.Oscillator(startFreq * 0.997, 'sine'); // Phase cancellation
-    const osc4 = new Tone.Oscillator(startFreq * 2.01, 'sine'); // Octave harmonic
+    // Pure sine tone for clarity (water drop)
+    const osc = new Tone.Oscillator(baseFreq, 'sine');
 
-    // Bitcrusher-style filter
-    const filter = new Tone.Filter({
-      frequency: 800 + Math.random() * 400, // Random highpass for digital grit
-      type: 'highpass',
-      Q: 8 + Math.random() * 4 // Resonant peak for metallic edge
+    // Metallic resonance (underground cavity effect)
+    // Multiple slightly detuned harmonics for richness
+    const metalOsc1 = new Tone.Oscillator(baseFreq * 2.002, 'sine'); // Octave harmonic with slight detune
+    const metalOsc2 = new Tone.Oscillator(baseFreq * 3.003, 'sine'); // 3rd harmonic
+    const metalOsc3 = new Tone.Oscillator(baseFreq * 4.001, 'sine'); // 4th harmonic
+
+    // Each metallic harmonic has its own resonance envelope
+    const metalEnv1 = new Tone.AmplitudeEnvelope({
+      attack: 0.01,
+      decay: 2.0,
+      sustain: 0.1,
+      release: 4.0
     });
 
-    // Aggressive pitch envelope with random jumps
-    const pitchEnv = new Tone.FrequencyEnvelope({
-      attack: 0.01, // Very fast attack
+    const metalEnv2 = new Tone.AmplitudeEnvelope({
+      attack: 0.01,
+      decay: 1.5,
+      sustain: 0.05,
+      release: 3.0
+    });
+
+    const metalEnv3 = new Tone.AmplitudeEnvelope({
+      attack: 0.01,
+      decay: 1.0,
+      sustain: 0.03,
+      release: 2.0
+    });
+
+    // Main tone envelope - fast attack like water drop, long decay like echo
+    const mainEnv = new Tone.AmplitudeEnvelope({
+      attack: 0.005,
+      decay: 0.3,
+      sustain: 0.05,
+      release: 3.0
+    });
+
+    // Gentle pitch slide down (water settling)
+    const pitchSlide = new Tone.FrequencyEnvelope({
+      attack: 0.01,
       decay: 0.2,
-      sustain: 0.1,
-      release: 0.3,
+      sustain: 0,
+      release: 0.5,
       attackCurve: 'exponential',
       releaseCurve: 'exponential'
     });
 
-    pitchEnv.connect(osc1.frequency);
-    pitchEnv.connect(osc2.frequency);
-    pitchEnv.connect(osc3.frequency);
-    pitchEnv.connect(osc4.frequency);
+    // Subtle pitch bend for natural feel
+    const targetFreq = baseFreq * 0.98; // Slight pitch down
 
-    // Fast LFO for warbling effect
-    const lfo = new Tone.LFO(15 + Math.random() * 10, -50, 50); // 15-25Hz warble
-    lfo.connect(osc1.detune);
-    lfo.connect(osc2.detune);
-    lfo.connect(osc3.detune);
-    lfo.start();
+    pitchSlide.connect(osc.frequency);
 
-    // Stutter envelope for digital glitches
-    const stutterEnv = new Tone.AmplitudeEnvelope({
-      attack: 0.001,
-      decay: 0.05,
-      sustain: 0,
-      release: 0.05
+    // Very gentle lowpass for warmth
+    const filter = new Tone.Filter({
+      frequency: 2000,
+      type: 'lowpass',
+      Q: 0.5
     });
 
-    const gain = new Tone.Gain(0.4);
+    // Gain levels - main tone is softer, metallic harmonics are very subtle
+    const mainGain = new Tone.Gain(0.5);
+    const metalGain1 = new Tone.Gain(0.15);
+    const metalGain2 = new Tone.Gain(0.08);
+    const metalGain3 = new Tone.Gain(0.05);
 
-    // Connect with slight random delay for phase offset
-    osc1.connect(filter);
-    osc2.connect(filter);
-    osc3.connect(filter);
-    osc4.connect(filter);
-    filter.connect(stutterEnv);
-    stutterEnv.connect(gain);
-    gain.connect(this.echoDelay);
+    // Connect signal path
+    osc.connect(filter);
+    filter.connect(mainEnv);
+    mainEnv.connect(mainGain);
+    mainGain.connect(this.echoDelay);
 
-    osc1.start();
-    osc2.start();
-    osc3.start();
-    osc4.start();
+    // Metallic harmonics path
+    metalOsc1.connect(metalEnv1);
+    metalEnv1.connect(metalGain1);
+    metalGain1.connect(this.echoDelay);
 
-    // Trigger with stutter timing
+    metalOsc2.connect(metalEnv2);
+    metalEnv2.connect(metalGain2);
+    metalGain2.connect(this.echoDelay);
+
+    metalOsc3.connect(metalEnv3);
+    metalEnv3.connect(metalGain3);
+    metalGain3.connect(this.echoDelay);
+
+    // Start oscillators
+    osc.start();
+    metalOsc1.start();
+    metalOsc2.start();
+    metalOsc3.start();
+
+    // Trigger envelopes
     const now = Tone.now();
-    pitchEnv.triggerAttackRelease(endFreq, '0.3s', now);
-    stutterEnv.triggerAttackRelease('0.1s', now);
-    stutterEnv.triggerAttackRelease('0.05s', now + 0.12);
-    stutterEnv.triggerAttackRelease('0.08s', now + 0.24);
-    stutterEnv.triggerAttackRelease('0.03s', now + 0.36);
 
-    // Random frequency jump for glitch moment
-    setTimeout(() => {
-      if (Math.random() > 0.5) {
-        try {
-          osc1.frequency.setValueAtTime(endFreq * (1 + Math.random() * 0.1), Tone.now());
-        } catch (e) {
-          // Ignore
-        }
-      }
-    }, 100);
+    // Main water drop sound
+    mainEnv.triggerAttackRelease('3.5s', now);
 
-    // PERFORMANCE: Fast cleanup
+    // Metallic resonances (staggered for natural decay)
+    metalEnv1.triggerAttackRelease('6s', now);
+    metalEnv2.triggerAttackRelease('5s', now + 0.05);
+    metalEnv3.triggerAttackRelease('4s', now + 0.1);
+
+    // Gentle pitch bend
+    pitchSlide.triggerAttackRelease(targetFreq, '0.7s', now);
+
+    // PERFORMANCE: Extended cleanup for long decay
     const timeoutId = setTimeout(() => {
       try {
-        lfo.dispose();
-        osc1.dispose();
-        osc2.dispose();
-        osc3.dispose();
-        osc4.dispose();
+        osc.dispose();
+        metalOsc1.dispose();
+        metalOsc2.dispose();
+        metalOsc3.dispose();
         filter.dispose();
-        pitchEnv.dispose();
-        stutterEnv.dispose();
-        gain.dispose();
+        mainEnv.dispose();
+        metalEnv1.dispose();
+        metalEnv2.dispose();
+        metalEnv3.dispose();
+        pitchSlide.dispose();
+        mainGain.dispose();
+        metalGain1.dispose();
+        metalGain2.dispose();
+        metalGain3.dispose();
         this.temporaryNodes.delete('ramp');
       } catch (error) {
         // Ignore
       }
-    }, 1500);
+    }, 7000); // 7 seconds for full decay
 
-    this.temporaryNodes.set('ramp', { nodes: [lfo, osc1, osc2, osc3, osc4, filter, pitchEnv, stutterEnv, gain], timeoutId });
+    this.temporaryNodes.set('ramp', {
+      nodes: [osc, metalOsc1, metalOsc2, metalOsc3, filter, mainEnv, metalEnv1, metalEnv2, metalEnv3,
+              pitchSlide, mainGain, metalGain1, metalGain2, metalGain3],
+      timeoutId
+    });
   }
 
   private playSpiralEffect(): void {
