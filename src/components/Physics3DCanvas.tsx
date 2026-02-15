@@ -502,15 +502,6 @@ const Ramp = React.memo(({ position, nodeId, params }: any) => {
           metalness={0.1}
         />
       </Box>
-      <Text
-        position={[0, 0.2, 0]}
-        fontSize={0.2}
-        color="white"
-        anchorX="center"
-        anchorY="middle"
-      >
-        RAMP
-      </Text>
     </group>
   );
 });
@@ -942,12 +933,11 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         }
 
         if (unlockTriggered) {
-          // Show unlock notification
-          const unlockText = 'UNLOCKED!';
-          setComboDisplay({ show: true, text: unlockText, scale: 2 });
+          // Trigger color dimension visual effect instead of text
+          setComboDisplay({ show: true, text: '', scale: 0 });
           setTimeout(() => {
             setComboDisplay(prev => ({ ...prev, show: false, scale: 1 }));
-          }, 1500);
+          }, 2000);
         }
 
         return newUnlocks;
@@ -1328,10 +1318,15 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         <Suspense fallback={null}>
           <Physics
             gravity={[0, -15, 0]}
+            iterations={4} // Reduced from default 10 for better performance
+            broadphase="Naive" // Naive is faster for small numbers of objects
             defaultContactMaterial={{
               friction: 0.4,
               restitution: 0.7
             }}
+            allowSleep={true} // Enable sleeping for static objects
+            sleepSpeedLimit={0.1} // Objects below this speed will sleep
+            sleepTimeLimit={0.5} // Time before object falls asleep
           >
             <Scene
               nodes={nodes}
