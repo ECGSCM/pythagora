@@ -1660,20 +1660,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
            selectedNodeType === 'seesaw' ? '∞' :
            selectedNodeType === 'bell' ? '❖' : selectedNodeType}
         </MUIBox>
-        <MUIBox sx={{
-          fontSize: '0.75rem',
-          color: '#CCCCCC',
-          letterSpacing: '0.1em'
-        }}>
-          {selectedNodeType === 'marble' ? 'ORIGIN' :
-           selectedNodeType === 'ramp' ? 'SLOPE' :
-           selectedNodeType === 'bumper' ? 'BASE' :
-           selectedNodeType === 'chime' ? 'HEX' :
-           selectedNodeType === 'spinner' ? 'SPIRAL' :
-           selectedNodeType === 'funnel' ? 'PORTAL' :
-           selectedNodeType === 'seesaw' ? 'BALANCE' :
-           selectedNodeType === 'bell' ? 'AXIS' : selectedNodeType.toUpperCase()}
-        </MUIBox>
       </MUIBox>
     </MUIBox>
   );
