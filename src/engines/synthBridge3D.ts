@@ -63,7 +63,6 @@ export class SynthBridge3D {
         const audioNode = this.audioEngine.createNode(node);
         
         if (!audioNode) {
-          console.warn(`Failed to create audio node for type: ${node.type}`);
           return false;
         }
         
@@ -71,7 +70,6 @@ export class SynthBridge3D {
         if (node.type === 'osc' && audioNode instanceof Tone.Oscillator) {
           audioNode.toDestination();
           // Don't auto-start - only start on collision
-          console.log('Oscillator connected (but not started):', node.id);
         }
       }
 
@@ -106,12 +104,12 @@ export class SynthBridge3D {
     return this.audioEngine.getMasterVolume();
   }
 
-  activateHealthFrequency(preset: { id: string; frequency: number; name: string; description: string }): void {
-    this.audioEngine.activateHealthFrequency(preset);
+  activateHealthFrequency(): void {
+    this.audioEngine.activateHealthFrequency();
   }
 
-  stopHealthFrequency(presetId?: string): void {
-    this.audioEngine.stopHealthFrequency(presetId);
+  stopHealthFrequency(): void {
+    this.audioEngine.stopHealthFrequency();
   }
 
   loadPatch(nodes: PatchNode[]): void {

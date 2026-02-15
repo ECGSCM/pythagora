@@ -1,13 +1,11 @@
 import React, { useRef, useEffect, useState, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { 
-  OrbitControls, 
-  Environment, 
-  Box, 
-  Sphere, 
+import {
+  OrbitControls,
+  Environment,
+  Box,
+  Sphere,
   Cylinder,
-  Cone,
-  Torus,
   Text,
   ContactShadows,
   PerspectiveCamera,
@@ -17,8 +15,8 @@ import {
 import { Physics, useSphere, useBox, useCylinder, usePlane } from '@react-three/cannon';
 import { SynthBridge3D } from '../engines/synthBridge3D';
 import { PatchNode } from '../types/db.types';
-import { Box as MUIBox, IconButton, Tooltip } from '@mui/material';
-import { PlayArrow, Pause, VolumeUp, VolumeOff } from '@mui/icons-material';
+import { Box as MUIBox, IconButton, Tooltip, Typography } from '@mui/material';
+import { VolumeUp, VolumeOff } from '@mui/icons-material';
 import * as THREE from 'three';
 
 interface Physics3DCanvasProps {
@@ -27,12 +25,10 @@ interface Physics3DCanvasProps {
   onCollision?: (event: any) => void;
   onSelectionChange?: (nodeId: string | null) => void;
   selectedNodeType?: string;
-  isPlaying?: boolean;
-  onPlayStateChange?: (playing: boolean) => void;
 }
 
 // Enhanced Marble Component with trail effect
-function Marble({ position, onCollide }: any) {
+const Marble = React.memo(({ position, onCollide }: any) => {
   const [ref] = useSphere(() => ({
     mass: 1,
     position,
@@ -42,7 +38,6 @@ function Marble({ position, onCollide }: any) {
       friction: 0.3
     },
     onCollide: (e) => {
-      console.log('🎯 Marble collision detected:', e);
       if (e.body && e.body.userData?.nodeId) {
         const collisionEvent = {
           nodeId: e.body.userData.nodeId,
@@ -50,7 +45,6 @@ function Marble({ position, onCollide }: any) {
           position: e.contact?.contactPoint || { x: 0, y: 0, z: 0 },
           timestamp: Date.now()
         };
-        console.log('🎵 Triggering collision:', collisionEvent);
         onCollide(collisionEvent);
       }
     }
@@ -66,19 +60,20 @@ function Marble({ position, onCollide }: any) {
 
   return (
     <Sphere ref={ref as any} args={[0.3, 32, 32]} castShadow>
-      <meshStandardMaterial 
-        color="#FF4757" 
-        metalness={0.9} 
+      <meshStandardMaterial
+        color="#FF4757"
+        metalness={0.9}
         roughness={0.1}
         emissive="#FF4757"
         emissiveIntensity={0.3}
       />
     </Sphere>
   );
-}
+});
+Marble.displayName = 'Marble';
 
 // Ramp Component - For guiding marbles
-function Ramp({ position, nodeId, params }: any) {
+const Ramp = React.memo(({ position, nodeId, params }: any) => {
   const [ref] = useBox(() => ({
     position,
     args: [4, 0.2, 2],
@@ -89,7 +84,7 @@ function Ramp({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any} rotation={[0, 0, (params.angle || 15) * Math.PI / 180]}>
       <Box args={[4, 0.2, 2]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color="#8B4513"
           roughness={0.8}
           metalness={0.1}
@@ -106,10 +101,11 @@ function Ramp({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Ramp.displayName = 'Ramp';
 
 // Enhanced Bumper Component
-function Bumper({ position, nodeId, params }: any) {
+const Bumper = React.memo(({ position, nodeId, params }: any) => {
   const [ref] = useCylinder(() => ({
     position,
     args: [1.2, 1.2, 0.6],
@@ -129,7 +125,7 @@ function Bumper({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any}>
       <Cylinder args={[1.2, 1.2, 0.6]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color={hit ? "#FFD700" : "#4ECDC4"}
           metalness={0.8}
           roughness={0.2}
@@ -148,10 +144,11 @@ function Bumper({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Bumper.displayName = 'Bumper';
 
 // Chime Component - Vertical tubes that create melodic sounds
-function Chime({ position, nodeId, params }: any) {
+const Chime = React.memo(({ position, nodeId, params }: any) => {
   const [ref] = useCylinder(() => ({
     position,
     args: [0.15, 0.15, 3],
@@ -171,7 +168,7 @@ function Chime({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any}>
       <Cylinder args={[0.15, 0.15, 3]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color={chiming ? "#FF6B9D" : "#C44569"}
           metalness={0.9}
           roughness={0.1}
@@ -191,18 +188,18 @@ function Chime({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Chime.displayName = 'Chime';
 
 // Spinner Component - Rotating wheel with multiple note triggers
-function Spinner({ position, nodeId, params }: any) {
+const Spinner = React.memo(({ position, nodeId, params }: any) => {
+  const meshRef = useRef<THREE.Mesh>(null);
   const [ref] = useCylinder(() => ({
     position,
     args: [1.5, 1.5, 0.3],
     type: 'Static',
     userData: { nodeId }
   }));
-
-  const meshRef = useRef<THREE.Mesh>();
 
   useFrame(() => {
     if (meshRef.current) {
@@ -213,7 +210,7 @@ function Spinner({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any}>
       <Cylinder ref={meshRef} args={[1.5, 1.5, 0.3]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color="#20BF6B"
           metalness={0.6}
           roughness={0.4}
@@ -232,10 +229,11 @@ function Spinner({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Spinner.displayName = 'Spinner';
 
 // Funnel Component - Spiral sound effect
-function Funnel({ position, nodeId, params }: any) {
+const Funnel = React.memo(({ position, nodeId }: any) => {
   const [ref] = useCylinder(() => ({
     position,
     args: [2, 0.3, 2],
@@ -246,7 +244,7 @@ function Funnel({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any}>
       <Cylinder args={[2, 0.3, 2]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color="#5A67D8"
           metalness={0.7}
           roughness={0.3}
@@ -265,10 +263,11 @@ function Funnel({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Funnel.displayName = 'Funnel';
 
 // Seesaw Component - Balance-triggered sound
-function Seesaw({ position, nodeId, params }: any) {
+const Seesaw = React.memo(({ position, nodeId }: any) => {
   const [ref] = useBox(() => ({
     position,
     args: [3, 0.2, 0.8],
@@ -276,12 +275,10 @@ function Seesaw({ position, nodeId, params }: any) {
     userData: { nodeId }
   }));
 
-  const [tilt, setTilt] = useState(0);
-
   return (
-    <group ref={ref as any} rotation={[0, 0, tilt]}>
+    <group ref={ref as any}>
       <Box args={[3, 0.2, 0.8]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color="#FD79A8"
           metalness={0.5}
           roughness={0.5}
@@ -300,10 +297,11 @@ function Seesaw({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Seesaw.displayName = 'Seesaw';
 
 // Bell Component - Harmonic bell sounds
-function Bell({ position, nodeId, params }: any) {
+const Bell = React.memo(({ position, nodeId }: any) => {
   const [ref] = useCylinder(() => ({
     position,
     args: [1, 1.5, 2],
@@ -323,7 +321,7 @@ function Bell({ position, nodeId, params }: any) {
   return (
     <group ref={ref as any}>
       <Cylinder args={[1, 1.5, 2]} castShadow receiveShadow>
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color={ringing ? "#F39C12" : "#E67E22"}
           metalness={0.9}
           roughness={0.1}
@@ -342,10 +340,11 @@ function Bell({ position, nodeId, params }: any) {
       </Text>
     </group>
   );
-}
+});
+Bell.displayName = 'Bell';
 
 // Ground Component
-function Ground() {
+const Ground = React.memo(() => {
   const [ref] = usePlane(() => ({
     rotation: [-Math.PI / 2, 0, 0],
     position: [0, -2, 0],
@@ -366,17 +365,18 @@ function Ground() {
       />
     </Plane>
   );
-}
+});
+Ground.displayName = 'Ground';
 
 // 3D Scene Component
-function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) => {
   const [marbles, setMarbles] = useState<any[]>([]);
 
   // Handle mouse clicks to add modules/marbles
   const handlePointerDown = (e: any) => {
     e.stopPropagation();
     const point = e.point;
-    
+
     if (selectedNodeType === 'marble') {
       const newMarble = {
         id: `marble-${Date.now()}`,
@@ -391,8 +391,8 @@ function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
   // Module renderer
   const renderModule = (node: PatchNode) => {
     const position = [
-      node.position.x, 
-      node.position.y, 
+      node.position.x,
+      node.position.y,
       0
     ];
 
@@ -419,7 +419,7 @@ function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
   return (
     <>
       <PerspectiveCamera makeDefault position={[15, 12, 15]} />
-      <OrbitControls 
+      <OrbitControls
         enablePan={true}
         enableZoom={true}
         enableRotate={true}
@@ -447,17 +447,17 @@ function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
 
       {/* Environment */}
       <Environment preset="night" />
-      
+
       {/* Interactive Ground */}
       <Ground />
-      
+
       {/* Contact Shadows */}
-      <ContactShadows 
-        position={[0, -1.9, 0]} 
-        opacity={0.6} 
-        scale={30} 
-        blur={2} 
-        far={10} 
+      <ContactShadows
+        position={[0, -1.9, 0]}
+        opacity={0.6}
+        scale={30}
+        blur={2}
+        far={10}
       />
 
       {/* Invisible interaction plane */}
@@ -489,9 +489,9 @@ function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
             Math.random() * 15 + 5,
             (Math.random() - 0.5) * 30
           ]}>
-            <meshStandardMaterial 
-              color="#00BFA6" 
-              emissive="#00BFA6" 
+            <meshStandardMaterial
+              color="#00BFA6"
+              emissive="#00BFA6"
               emissiveIntensity={0.5}
               transparent
               opacity={0.6}
@@ -501,32 +501,33 @@ function Scene({ nodes, onCollision, selectedNodeType, onNodeAdd }: any) {
       </group>
     </>
   );
-}
+});
+Scene.displayName = 'Scene';
 
-export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
+export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   nodes,
   onNodeAdd,
   onCollision,
-  selectedNodeType = 'marble',
-  isPlaying = false,
-  onPlayStateChange
+  selectedNodeType = 'marble'
 }) => {
   const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     const initializeBridge = async () => {
       try {
         const bridge = new SynthBridge3D({
           onCollision: (event) => {
-            console.log('🎵 SynthBridge collision callback:', event);
             onCollision?.(event);
           }
         });
         await bridge.initialize();
         setSynthBridge(bridge);
+        setIsInitialized(true);
       } catch (error) {
-        console.error('Failed to initialize SynthBridge3D:', error);
+        setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
       }
     };
 
@@ -546,34 +547,45 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
     }
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'm' || event.key === 'M') {
+      handleMute();
+    }
+  };
+
   return (
-    <MUIBox sx={{ 
-      width: '100%', 
-      height: '100%', 
-      position: 'relative',
-      background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
-    }}>
+    <MUIBox
+      sx={{
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
+      }}
+      onKeyDown={handleKeyDown}
+      role="region"
+      aria-label="3D physics canvas for audio synthesis"
+      tabIndex={0}
+    >
       <Canvas
         shadows
-        gl={{ 
-          antialias: true, 
+        gl={{
+          antialias: true,
           alpha: false,
           powerPreference: "high-performance"
         }}
         camera={{ position: [15, 12, 15], fov: 60 }}
       >
         <Suspense fallback={null}>
-          <Physics 
+          <Physics
             gravity={[0, -15, 0]}
             defaultContactMaterial={{
               friction: 0.4,
               restitution: 0.7
             }}
           >
-            <Scene 
+            <Scene
               nodes={nodes}
               onCollision={(event: any) => {
-                console.log('🎯 Scene collision:', event);
                 if (synthBridge) {
                   synthBridge.triggerCollision(event);
                 }
@@ -586,15 +598,68 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
         </Suspense>
       </Canvas>
 
+      {/* Loading State */}
+      {!isInitialized && !initError && (
+        <MUIBox
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+            color: 'white'
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <Typography variant="h6" gutterBottom>
+            Initializing 3D Physics & Audio...
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.7 }}>
+            Please wait while we set up the audio engine
+          </Typography>
+        </MUIBox>
+      )}
+
+      {/* Error State */}
+      {initError && (
+        <MUIBox
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+            color: '#ff4444',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            padding: 3,
+            borderRadius: 2
+          }}
+          role="alert"
+          aria-live="assertive"
+        >
+          <Typography variant="h6" gutterBottom>
+            Initialization Error
+          </Typography>
+          <Typography variant="body2">
+            {initError}
+          </Typography>
+        </MUIBox>
+      )}
+
       {/* Floating Controls */}
-      <MUIBox sx={{
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        display: 'flex',
-        gap: 1
-      }}>
-        <Tooltip title={isMuted ? "Unmute" : "Mute"}>
+      <MUIBox
+        sx={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          display: 'flex',
+          gap: 1
+        }}
+        role="toolbar"
+        aria-label="Audio controls"
+      >
+        <Tooltip title={isMuted ? "Unmute (Press M)" : "Mute (Press M)"}>
           <IconButton
             onClick={handleMute}
             sx={{
@@ -602,6 +667,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
               color: 'white',
               '&:hover': { background: 'rgba(26, 26, 46, 1)' }
             }}
+            aria-label={isMuted ? "Unmute audio" : "Mute audio"}
           >
             {isMuted ? <VolumeOff /> : <VolumeUp />}
           </IconButton>
@@ -609,22 +675,26 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
       </MUIBox>
 
       {/* Selected Module Type Indicator */}
-      <MUIBox sx={{
-        position: 'absolute',
-        bottom: 16,
-        right: 16,
-        background: 'rgba(26, 26, 46, 0.9)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: 2,
-        padding: 2,
-        color: 'white'
-      }}>
+      <MUIBox
+        sx={{
+          position: 'absolute',
+          bottom: 16,
+          right: 16,
+          background: 'rgba(26, 26, 46, 0.9)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: 2,
+          padding: 2,
+          color: 'white'
+        }}
+        role="status"
+        aria-live="polite"
+      >
         <MUIBox sx={{ fontSize: '0.875rem', opacity: 0.7 }}>
           Selected:
         </MUIBox>
         <MUIBox sx={{ fontWeight: 'bold', color: '#00BFA6' }}>
-          {selectedNodeType === 'marble' ? '🔴 Marble' : 
+          {selectedNodeType === 'marble' ? '🔴 Marble' :
            selectedNodeType === 'ramp' ? '📐 Ramp' :
            selectedNodeType === 'bumper' ? '🥁 Bumper' :
            selectedNodeType === 'chime' ? '🎵 Chime' :
@@ -636,4 +706,5 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = ({
       </MUIBox>
     </MUIBox>
   );
-};
+});
+Physics3DCanvas.displayName = 'Physics3DCanvas';

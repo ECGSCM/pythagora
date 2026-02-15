@@ -1,24 +1,29 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Database } from '../types/supabase.types';
+import { config } from '../config';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your_default_anon_key';
-
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
+// Initialize Supabase client with validated config
+export const supabase = createClient<Database>(
+  config.supabase.url,
+  config.supabase.anonKey,
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
     }
   }
-});
+);
 
 // Helper types for better TypeScript support
 export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
+export type TablesInsert<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert'];
+export type TablesUpdate<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Update'];
 export type Enums<T extends keyof Database['public']['Enums']> = Database['public']['Enums'][T];
 
 // Authentication helpers
@@ -53,12 +58,13 @@ export const auth = {
   }
 };
 
-// Database helpers
+// Database helpers with type assertions for Supabase v2 compatibility
 export const db = {
   // Patches
   patches: {
-    create: async (patch: Partial<Tables<'patches'>>) => {
-      return supabase.from('patches').insert(patch).select().single();
+    create: async (patch: TablesInsert<'patches'>) => {
+      const client = supabase as SupabaseClient<any>;
+      return client.from('patches').insert(patch as any).select().single();
     },
 
     getById: async (id: string) => {
@@ -78,8 +84,9 @@ export const db = {
         .range(offset, offset + limit - 1);
     },
 
-    update: async (id: string, updates: Partial<Tables<'patches'>>) => {
-      return supabase.from('patches').update(updates).eq('id', id).select().single();
+    update: async (id: string, updates: TablesUpdate<'patches'>) => {
+      const client = supabase as SupabaseClient<any>;
+      return client.from('patches').update(updates as any).eq('id', id).select().single();
     },
 
     delete: async (id: string) => {
@@ -89,20 +96,23 @@ export const db = {
 
   // Users
   users: {
-    create: async (user: Partial<Tables<'users'>>) => {
-      return supabase.from('users').insert(user).select().single();
+    create: async (user: TablesInsert<'users'>) => {
+      const client = supabase as SupabaseClient<any>;
+      return client.from('users').insert(user as any).select().single();
     },
 
     getById: async (id: string) => {
       return supabase.from('users').select('*').eq('id', id).single();
     },
 
-    update: async (id: string, updates: Partial<Tables<'users'>>) => {
-      return supabase.from('users').update(updates).eq('id', id).select().single();
+    update: async (id: string, updates: TablesUpdate<'users'>) => {
+      const client = supabase as SupabaseClient<any>;
+      return client.from('users').update(updates as any).eq('id', id).select().single();
     },
 
     updateRole: async (id: string, role: 'free' | 'premium') => {
-      return supabase.from('users').update({ role }).eq('id', id);
+      const client = supabase as SupabaseClient<any>;
+      return client.from('users').update({ role } as any).eq('id', id);
     }
   },
 
@@ -147,15 +157,17 @@ export const db = {
         .order('category', { ascending: true });
     },
 
-    create: async (preset: Partial<Tables<'health_frequency_presets'>>) => {
-      return supabase.from('health_frequency_presets').insert(preset).select().single();
+    create: async (preset: TablesInsert<'health_frequency_presets'>) => {
+      const client = supabase as SupabaseClient<any>;
+      return client.from('health_frequency_presets').insert(preset as any).select().single();
     }
   },
 
   // Favorites
   favorites: {
     add: async (userId: string, patchId: string) => {
-      return supabase.from('user_patch_favorites').insert({ user_id: userId, patch_id: patchId });
+      const client = supabase as SupabaseClient<any>;
+      return client.from('user_patch_favorites').insert({ user_id: userId, patch_id: patchId } as any);
     },
 
     remove: async (userId: string, patchId: string) => {
@@ -184,13 +196,13 @@ export const realtime = {
   subscribeToPatch: (patchId: string, callback: (payload: any) => void) => {
     return supabase
       .channel(`patch:${patchId}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
           table: 'patches',
           filter: `id=eq.${patchId}`
-        }, 
+        },
         callback
       )
       .subscribe();

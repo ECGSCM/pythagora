@@ -17,12 +17,11 @@ import {
   Chip
 } from '@mui/material';
 import {
-  Save as SaveIcon,
   Clear as ClearIcon,
-  Share as ShareIcon,
   Home as HomeIcon
 } from '@mui/icons-material';
 import { Physics3DCanvas } from './components/Physics3DCanvas';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { PatchNode } from './types/db.types';
 import { CollisionEvent } from './engines/physics';
@@ -76,9 +75,7 @@ const moduleTypes = [
 function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [nodes, setNodes] = useState<PatchNode[]>([]);
-  const [selectedNode, setSelectedNode] = useState<PatchNode | null>(null);
   const [selectedModuleType, setSelectedModuleType] = useState<string>('marble');
-  const [isPlaying, setIsPlaying] = useState(false);
   const [notification, setNotification] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
   // Add initial demo modules when starting
@@ -111,7 +108,7 @@ function App() {
         }
       ];
       setNodes(demoModules);
-      
+
       setNotification({
         message: '🎵 Welcome to Pythagora-Synth! Click to drop marbles and create music!',
         severity: 'info'
@@ -132,49 +129,21 @@ function App() {
     };
 
     setNodes(prev => [...prev, newModule]);
-    setSelectedNode(newModule);
-    
+
     setNotification({
       message: `✨ Added ${selectedModuleType} module!`,
       severity: 'success'
     });
   }, [selectedModuleType]);
 
-  // Handle module updates
-  const handleModuleUpdate = useCallback((nodeId: string, updates: Partial<PatchNode>) => {
-    setNodes(prev => prev.map(node => 
-      node.id === nodeId ? { ...node, ...updates } : node
-    ));
-
-    if (selectedNode?.id === nodeId) {
-      setSelectedNode(prev => prev ? { ...prev, ...updates } : null);
-    }
-  }, [selectedNode]);
-
-  // Handle module deletion
-  const handleModuleDelete = useCallback((nodeId: string) => {
-    setNodes(prev => prev.filter(node => node.id !== nodeId));
-    
-    if (selectedNode?.id === nodeId) {
-      setSelectedNode(null);
-    }
-
-    setNotification({
-      message: 'Module removed',
-      severity: 'info'
-    });
-  }, [selectedNode]);
-
   // Handle collision events
-  const handleCollision = useCallback((event: CollisionEvent) => {
-    // Enhanced collision feedback
-    console.log('🎵 Musical collision:', event);
+  const handleCollision = useCallback((_event: CollisionEvent) => {
+    // Collision feedback can be handled here for UI updates
   }, []);
 
   // Clear all modules
   const handleClearAll = useCallback(() => {
     setNodes([]);
-    setSelectedNode(null);
     setNotification({
       message: 'All modules cleared',
       severity: 'info'
@@ -193,14 +162,14 @@ function App() {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
+      <Box sx={{
+        display: 'flex',
+        flexDirection: 'column',
         height: '100vh',
         background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
       }}>
         {/* Top Control Bar */}
-        <AppBar position="static" sx={{ 
+        <AppBar position="static" sx={{
           background: 'rgba(26, 26, 46, 0.9)',
           backdropFilter: 'blur(10px)',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
@@ -209,7 +178,7 @@ function App() {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
               🧩 Pythagora-Synth
             </Typography>
-            
+
             {/* Module Type Selector */}
             <Box sx={{ display: 'flex', gap: 1, mr: 2 }}>
               {moduleTypes.map(({ type, name }) => (
@@ -246,21 +215,24 @@ function App() {
 
         {/* Main 3D Canvas */}
         <Box sx={{ flexGrow: 1, position: 'relative' }}>
-          <Physics3DCanvas
-            nodes={nodes}
-            onNodeAdd={handleModuleAdd}
-            onCollision={handleCollision}
-            onSelectionChange={(nodeId) => {
-              const node = nodes.find(n => n.id === nodeId);
-              setSelectedNode(node || null);
+          <ErrorBoundary
+            onError={() => {
+              // Error logged by ErrorBoundary component
             }}
-            selectedNodeType={selectedModuleType}
-            isPlaying={isPlaying}
-            onPlayStateChange={setIsPlaying}
-          />
-          
+          >
+            <Physics3DCanvas
+              nodes={nodes}
+              onNodeAdd={handleModuleAdd}
+              onCollision={handleCollision}
+              onSelectionChange={() => {
+                // Node selection handling
+              }}
+              selectedNodeType={selectedModuleType}
+            />
+          </ErrorBoundary>
+
           {/* Floating Instructions */}
-          <Card sx={{ 
+          <Card sx={{
             position: 'absolute',
             bottom: 20,
             left: 20,
@@ -290,15 +262,13 @@ function App() {
           onClose={() => setNotification(null)}
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
-          {notification && (
-            <Alert
-              onClose={() => setNotification(null)}
-              severity={notification.severity}
-              variant="filled"
-            >
-              {notification.message}
-            </Alert>
-          )}
+          <Alert
+            onClose={() => setNotification(null)}
+            severity={notification?.severity || 'info'}
+            variant="filled"
+          >
+            {notification?.message}
+          </Alert>
         </Snackbar>
       </Box>
     </ThemeProvider>

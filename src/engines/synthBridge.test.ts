@@ -5,12 +5,12 @@ import { PatchNode } from '../types/db.types';
 describe('SynthBridge', () => {
   let mockCanvas: HTMLCanvasElement;
   let synthBridge: SynthBridge;
-  let mockCollisionCallback: ReturnType<typeof vi.fn>;
+  let mockCollisionCallback: (event: any) => void;
 
   beforeEach(() => {
     mockCanvas = document.createElement('canvas');
-    mockCollisionCallback = vi.fn();
-    
+    mockCollisionCallback = vi.fn() as unknown as (event: any) => void;
+
     synthBridge = new SynthBridge({
       canvasElement: mockCanvas,
       onCollision: mockCollisionCallback
@@ -185,19 +185,11 @@ describe('SynthBridge', () => {
     });
 
     it('should activate health frequency', () => {
-      const preset = {
-        id: 'test-freq',
-        frequency: 528,
-        name: 'Test Frequency',
-        description: 'Test frequency for unit testing'
-      };
-
-      expect(() => synthBridge.activateHealthFrequency(preset)).not.toThrow();
+      expect(() => synthBridge.activateHealthFrequency()).not.toThrow();
     });
 
     it('should stop health frequency', () => {
       expect(() => synthBridge.stopHealthFrequency()).not.toThrow();
-      expect(() => synthBridge.stopHealthFrequency('test-freq')).not.toThrow();
     });
   });
 

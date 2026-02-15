@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Box, IconButton, Tooltip, Fab } from '@mui/material';
-import { Add as AddIcon, PlayArrow, Pause, VolumeUp, VolumeOff } from '@mui/icons-material';
+import { Add as AddIcon, VolumeUp, VolumeOff } from '@mui/icons-material';
 import { SynthBridge } from '../engines/synthBridge';
 import { CollisionEvent } from '../engines/physics';
 import { PatchNode } from '../types/db.types';
@@ -15,7 +15,7 @@ interface PhysicsCanvasProps {
   onPlayStateChange?: (playing: boolean) => void;
 }
 
-export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
+export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = React.memo(({
   nodes,
   onNodeAdd,
   onCollision,
@@ -29,6 +29,24 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
   const [isInitialized, setIsInitialized] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+  const [initError, setInitError] = useState<string | null>(null);
+
+  // Handle play/pause
+  const handlePlayPause = useCallback(() => {
+    const newPlayState = !isPlaying;
+    onPlayStateChange?.(newPlayState);
+  }, [isPlaying, onPlayStateChange]);
+
+  // Handle mute/unmute
+  const handleMute = useCallback(() => {
+    if (!synthBridgeRef.current) return;
+
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+
+    const volume = newMutedState ? -60 : -12; // -60dB is effectively muted
+    synthBridgeRef.current.setMasterVolume(volume);
+  }, [isMuted]);
 
   // Initialize SynthBridge
   useEffect(() => {
@@ -49,8 +67,6 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
           canvasElement: canvas,
           onCollision: (event) => {
             onCollision?.(event);
-            // Visual feedback for collision
-            console.log('Collision detected:', event);
           }
         });
 
@@ -58,7 +74,7 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
         synthBridgeRef.current = bridge;
         setIsInitialized(true);
       } catch (error) {
-        console.error('Failed to initialize SynthBridge:', error);
+        setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
       }
     };
 
@@ -84,14 +100,14 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
   useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current) return;
-      
+
       const container = canvasRef.current.parentElement;
       if (container) {
         const newWidth = container.clientWidth;
         const newHeight = container.clientHeight;
-        
+
         setCanvasSize({ width: newWidth, height: newHeight });
-        
+
         if (synthBridgeRef.current) {
           synthBridgeRef.current.resize(newWidth, newHeight);
         }
@@ -121,22 +137,24 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
     }
   }, [selectedNodeType, onNodeAdd]);
 
-  // Handle play/pause
-  const handlePlayPause = useCallback(() => {
-    const newPlayState = !isPlaying;
-    onPlayStateChange?.(newPlayState);
-  }, [isPlaying, onPlayStateChange]);
+  // Handle keyboard events for accessibility
+  const handleCanvasKeyDown = useCallback((event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleCanvasClick(event as any);
+    }
+  }, [handleCanvasClick]);
 
-  // Handle mute/unmute
-  const handleMute = useCallback(() => {
-    if (!synthBridgeRef.current) return;
-
-    const newMutedState = !isMuted;
-    setIsMuted(newMutedState);
-    
-    const volume = newMutedState ? -60 : -12; // -60dB is effectively muted
-    synthBridgeRef.current.setMasterVolume(volume);
-  }, [isMuted]);
+  // Handle keyboard shortcuts
+  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'm' || event.key === 'M') {
+      handleMute();
+    }
+    if (event.key === ' ' || event.key === 'p' || event.key === 'P') {
+      event.preventDefault();
+      handlePlayPause();
+    }
+  }, [handleMute, handlePlayPause]);
 
   // Add marble randomly (for demo purposes)
   const addRandomMarble = useCallback(() => {
@@ -144,20 +162,24 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
 
     const x = Math.random() * canvasSize.width;
     const y = 50; // Drop from top
-    
+
     synthBridgeRef.current.addMarble({ x, y });
   }, [canvasSize]);
 
   return (
-    <Box 
-      sx={{ 
-        position: 'relative', 
-        width: '100%', 
+    <Box
+      sx={{
+        position: 'relative',
+        width: '100%',
         height: '100%',
         overflow: 'hidden',
         backgroundColor: '#1a1a1a',
         borderRadius: 1
       }}
+      onKeyDown={handleKeyDown}
+      role="region"
+      aria-label="2D physics canvas for audio synthesis"
+      tabIndex={0}
     >
       {/* Canvas */}
       <canvas
@@ -165,12 +187,16 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
         width={canvasSize.width}
         height={canvasSize.height}
         onClick={handleCanvasClick}
+        onKeyDown={handleCanvasKeyDown}
         style={{
           display: 'block',
           width: '100%',
           height: '100%',
           cursor: selectedNodeType === 'marble' ? 'crosshair' : 'pointer'
         }}
+        role="button"
+        aria-label={`Click to add ${selectedNodeType === 'marble' ? 'marble' : 'node'}`}
+        tabIndex={0}
       />
 
       {/* Control buttons */}
@@ -183,23 +209,10 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
           flexDirection: 'column',
           gap: 1
         }}
+        role="toolbar"
+        aria-label="Playback and audio controls"
       >
-        <Tooltip title={isPlaying ? 'Pause' : 'Play'}>
-          <IconButton
-            onClick={handlePlayPause}
-            sx={{
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: 'white',
-              '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.2)'
-              }
-            }}
-          >
-            {isPlaying ? <Pause /> : <PlayArrow />}
-          </IconButton>
-        </Tooltip>
-
-        <Tooltip title={isMuted ? 'Unmute' : 'Mute'}>
+        <Tooltip title={isMuted ? 'Unmute (M)' : 'Mute (M)'}>
           <IconButton
             onClick={handleMute}
             sx={{
@@ -209,6 +222,7 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
                 backgroundColor: 'rgba(255, 255, 255, 0.2)'
               }
             }}
+            aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
           >
             {isMuted ? <VolumeOff /> : <VolumeUp />}
           </IconButton>
@@ -230,13 +244,14 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
               backgroundColor: '#ff5252'
             }
           }}
+          aria-label="Add random marble"
         >
           <AddIcon />
         </Fab>
       </Tooltip>
 
       {/* Initialization overlay */}
-      {!isInitialized && (
+      {!isInitialized && !initError && (
         <Box
           sx={{
             position: 'absolute',
@@ -251,10 +266,37 @@ export const PhysicsCanvas: React.FC<PhysicsCanvasProps> = ({
             color: 'white',
             fontSize: '1.2rem'
           }}
+          role="status"
+          aria-live="polite"
         >
           Initializing Physics & Audio...
         </Box>
       )}
+
+      {/* Error overlay */}
+      {initError && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+            color: '#ff4444',
+            fontSize: '1rem',
+            padding: 2
+          }}
+          role="alert"
+          aria-live="assertive"
+        >
+          {initError}
+        </Box>
+      )}
     </Box>
   );
-};
+});
+PhysicsCanvas.displayName = 'PhysicsCanvas';

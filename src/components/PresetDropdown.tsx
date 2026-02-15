@@ -156,7 +156,7 @@ const presetCategories = {
   }
 };
 
-export const PresetDropdown: React.FC<PresetDropdownProps> = ({
+export const PresetDropdown: React.FC<PresetDropdownProps> = React.memo(({
   onPresetSelect,
   selectedPreset
 }) => {
@@ -187,14 +187,17 @@ export const PresetDropdown: React.FC<PresetDropdownProps> = ({
           justifyContent: 'space-between',
           textTransform: 'none'
         }}
+        aria-label="Select health frequency preset"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {selectedPreset ? (
             <>
-              <Chip 
-                label={`${selectedPreset.frequency}Hz`} 
-                size="small" 
-                color="primary" 
+              <Chip
+                label={`${selectedPreset.frequency}Hz`}
+                size="small"
+                color="primary"
               />
               <Typography variant="body2">
                 {selectedPreset.name}
@@ -218,6 +221,8 @@ export const PresetDropdown: React.FC<PresetDropdownProps> = ({
             width: 350
           }
         }}
+        role="menu"
+        aria-label="Health frequency presets"
       >
         {Object.entries(presetCategories).map(([categoryKey, category]) => (
           <div key={categoryKey}>
@@ -238,13 +243,15 @@ export const PresetDropdown: React.FC<PresetDropdownProps> = ({
                 onClick={() => handlePresetSelect(preset)}
                 selected={selectedPreset?.id === preset.id}
                 sx={{ pl: 4 }}
+                role="menuitem"
+                aria-label={`${preset.name} - ${preset.description}`}
               >
                 <ListItemText
                   primary={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Chip 
-                        label={`${preset.frequency}Hz`} 
-                        size="small" 
+                      <Chip
+                        label={`${preset.frequency}Hz`}
+                        size="small"
                         variant="outlined"
                       />
                       <Typography variant="body2">
@@ -264,7 +271,7 @@ export const PresetDropdown: React.FC<PresetDropdownProps> = ({
             <Divider />
           </div>
         ))}
-        
+
         <MenuItem onClick={handleClose} sx={{ justifyContent: 'center' }}>
           <Typography variant="caption" color="text.secondary">
             ⚠️ For wellness guidance only - not medical treatment
@@ -273,4 +280,5 @@ export const PresetDropdown: React.FC<PresetDropdownProps> = ({
       </Menu>
     </>
   );
-};
+});
+PresetDropdown.displayName = 'PresetDropdown';

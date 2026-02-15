@@ -95,12 +95,12 @@ export class SynthBridge {
     return this.audioEngine.getMasterVolume();
   }
 
-  activateHealthFrequency(preset: { id: string; frequency: number; name: string; description: string }): void {
-    this.audioEngine.activateHealthFrequency(preset);
+  activateHealthFrequency(): void {
+    this.audioEngine.activateHealthFrequency();
   }
 
-  stopHealthFrequency(presetId?: string): void {
-    this.audioEngine.stopHealthFrequency(presetId);
+  stopHealthFrequency(): void {
+    this.audioEngine.stopHealthFrequency();
   }
 
   loadPatch(nodes: PatchNode[]): void {

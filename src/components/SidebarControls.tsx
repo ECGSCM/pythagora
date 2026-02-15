@@ -62,7 +62,7 @@ const healthFrequencyPresets: HealthFrequencyPreset[] = [
   }
 ];
 
-export const SidebarControls: React.FC<SidebarControlsProps> = ({
+export const SidebarControls: React.FC<SidebarControlsProps> = React.memo(({
   selectedNode,
   onNodeUpdate,
   onNodeDelete,
@@ -82,6 +82,13 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   const handlePresetActivate = (preset: HealthFrequencyPreset) => {
     setActivePreset(preset.id);
     onHealthFrequencyActivate?.(preset);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent, preset: HealthFrequencyPreset) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handlePresetActivate(preset);
+    }
   };
 
   const renderNodeControls = () => {
@@ -239,22 +246,24 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   };
 
   return (
-    <Box sx={{ width: 320, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ width: 320, height: '100%', display: 'flex', flexDirection: 'column' }} role="complementary" aria-label="Sidebar controls">
       {/* Master Volume */}
       <Card sx={{ mb: 2 }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <VolumeIcon sx={{ mr: 1 }} />
+            <VolumeIcon sx={{ mr: 1 }} aria-hidden="true" />
             <Typography variant="h6">Master Volume</Typography>
           </Box>
-          
-          <Typography gutterBottom>Volume: {masterVolume}dB</Typography>
+
+          <Typography gutterBottom id="master-volume-label">Volume: {masterVolume}dB</Typography>
           <Slider
             value={masterVolume}
             onChange={(_, value) => onMasterVolumeChange?.(value as number)}
             min={-60}
             max={0}
             step={1}
+            aria-labelledby="master-volume-label"
+            aria-label="Master volume control"
           />
         </CardContent>
       </Card>
@@ -262,21 +271,28 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
       {/* Health Frequencies */}
       <Card sx={{ mb: 2 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="h6" gutterBottom id="health-freq-title">
             Health Frequencies
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Therapeutic frequencies for wellness (guidance only)
           </Typography>
-          
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+
+          <Box
+            sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+            role="group"
+            aria-labelledby="health-freq-title"
+          >
             {healthFrequencyPresets.map((preset) => (
               <Tooltip key={preset.id} title={preset.scientific_basis} arrow>
                 <Button
                   variant={activePreset === preset.id ? 'contained' : 'outlined'}
                   size="small"
                   onClick={() => handlePresetActivate(preset)}
+                  onKeyDown={(e) => handleKeyDown(e, preset)}
                   sx={{ justifyContent: 'flex-start' }}
+                  aria-label={`Activate ${preset.name} - ${preset.description}`}
+                  aria-pressed={activePreset === preset.id}
                 >
                   <Box sx={{ textAlign: 'left' }}>
                     <Typography variant="body2" fontWeight="bold">
@@ -298,16 +314,17 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <SettingsIcon sx={{ mr: 1 }} />
+              <SettingsIcon sx={{ mr: 1 }} aria-hidden="true" />
               <Typography variant="h6">Node Parameters</Typography>
             </Box>
-            
+
             {selectedNode && (
               <Tooltip title="Delete Node">
                 <IconButton
                   size="small"
                   color="error"
                   onClick={() => onNodeDelete?.(selectedNode.id)}
+                  aria-label={`Delete ${selectedNode.type} node`}
                 >
                   <DeleteIcon />
                 </IconButton>
@@ -325,10 +342,11 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
           )}
 
           <Divider sx={{ mb: 2 }} />
-          
+
           {renderNodeControls()}
         </CardContent>
       </Card>
     </Box>
   );
-};
+});
+SidebarControls.displayName = 'SidebarControls';
