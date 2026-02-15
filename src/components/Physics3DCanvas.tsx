@@ -1546,31 +1546,31 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         sx={{
           background: '#000000',
           border: '1px solid #333333',
-          borderRadius: 1,
-          padding: 2,
+          borderRadius: 0.65,
+          padding: 1.3,
           display: 'flex',
           flexDirection: 'column',
-          gap: 1.5,
+          gap: 0.975,
           maxWidth: 'none'
         }}
         role="toolbar"
         aria-label="Module selector"
       >
         <Typography variant="caption" sx={{
-          fontSize: '0.7rem',
+          fontSize: '0.65rem',
           letterSpacing: '0.15em',
           color: '#888888',
           textAlign: 'center',
-          mb: 0.5
+          mb: 0.325
         }}>
           MODULES (1-8)
         </Typography>
         <MUIBox sx={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: 1.5,
+          gap: 0.975,
           justifyContent: 'center',
-          minWidth: 320
+          minWidth: 208
         }}>
           {[
             { type: 'marble', symbol: '◉', name: 'ORIGIN', key: '1' },
@@ -1593,9 +1593,9 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
                   background: selectedNodeType === module.type ? '#0A0A0A' : '#000000',
                   border: selectedNodeType === module.type ? '1px solid #FFFFFF' : '1px solid #333333',
                   color: '#FFFFFF',
-                  width: 64,
-                  height: 64,
-                  minWidth: 64,
+                  width: 41.6,
+                  height: 41.6,
+                  minWidth: 41.6,
                   padding: 0,
                   flexDirection: 'column',
                   gap: 0,
@@ -1608,16 +1608,16 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
                 aria-pressed={selectedNodeType === module.type}
               >
                 <MUIBox sx={{
-                  fontSize: '1.4rem',
+                  fontSize: '0.91rem',
                   lineHeight: 1,
                   fontWeight: selectedNodeType === module.type ? 600 : 400,
-                  height: 24
+                  height: 15.6
                 }}>
                   {module.symbol}
                 </MUIBox>
                 <Typography
                   sx={{
-                    fontSize: '0.08rem !important',
+                    fontSize: '0.065rem !important',
                     letterSpacing: '0.05em',
                     color: selectedNodeType === module.type ? '#FFFFFF' : '#888888',
                     lineHeight: 1,
