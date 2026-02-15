@@ -794,7 +794,7 @@ const Ground = React.memo(() => {
 Ground.displayName = 'Ground';
 
 // 3D Scene Component
-const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate }: any) => {
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, divineLightActive }: any) => {
   const [marbles, setMarbles] = useState<any[]>([]);
   const [ripples, setRipples] = useState<Array<{ id: string; position: [number, number, number]; color: string }>>([]);
 
@@ -1119,6 +1119,45 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
 
       {/* Environment - removed for performance, using simple lighting instead */}
 
+      {/* Divine Light - colorful lights from above when active */}
+      {divineLightActive && (
+        <>
+          <spotLight
+            position={[0, 20, 0]}
+            angle={0.6}
+            penumbra={0.5}
+            intensity={2.0}
+            color="#FFD700" // Golden light
+            castShadow
+            shadow-mapSize={[1024, 1024]}
+          />
+          <pointLight
+            position={[-5, 15, -5]}
+            intensity={1.5}
+            color="#FF6B6B" // Divine red
+            distance={25}
+          />
+          <pointLight
+            position={[5, 15, 5]}
+            intensity={1.5}
+            color="#4ECDC4" // Divine cyan
+            distance={25}
+          />
+          <pointLight
+            position={[-5, 15, 5]}
+            intensity={1.5}
+            color="#A855F7" // Divine purple
+            distance={25}
+          />
+          <pointLight
+            position={[5, 15, -5]}
+            intensity={1.5}
+            color="#F472B6" // Divine pink
+            distance={25}
+          />
+        </>
+      )}
+
       {/* Interactive Ground */}
       <Ground />
 
@@ -1219,6 +1258,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [echoMode, setEchoMode] = useState<'off' | 'short' | 'long'>('off');
+  const [divineLightActive, setDivineLightActive] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -1274,6 +1314,10 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     }
   };
 
+  const handleDivineLightToggle = () => {
+    setDivineLightActive(!divineLightActive);
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'm' || event.key === 'M') {
       handleMute();
@@ -1283,6 +1327,9 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       const currentIndex = modes.indexOf(echoMode);
       const nextIndex = (currentIndex + 1) % modes.length;
       handleEchoModeChange(modes[nextIndex]);
+    } else if (event.key === 'l' || event.key === 'L') {
+      // Toggle divine light
+      handleDivineLightToggle();
     } else if (event.key >= '1' && event.key <= '8') {
       // Module selection with number keys 1-8
       const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'];
@@ -1339,6 +1386,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               selectedNodeType={selectedNodeType}
               onNodeAdd={onNodeAdd}
               onStatsUpdate={(stats: any) => setDisplayStats(stats)}
+              divineLightActive={divineLightActive}
             />
           </Physics>
         </Suspense>
@@ -1485,6 +1533,27 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             aria-label="Disable echo"
           >
             <Box sx={{ fontSize: 20 }}>○</Box>
+          </IconButton>
+        </Tooltip>
+
+        {/* Divine Light Control */}
+        <Tooltip title={divineLightActive ? "Disable Divine Light (Press L)" : "Enable Divine Light (Press L)"}>
+          <IconButton
+            onClick={handleDivineLightToggle}
+            sx={{
+              background: divineLightActive ? 'linear-gradient(135deg, #FFD700 0%, #FF6B6B 50%, #4ECDC4 100%)' : '#000000',
+              border: divineLightActive ? '2px solid #FFD700' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: 48,
+              height: 48,
+              '&:hover': {
+                background: divineLightActive ? 'linear-gradient(135deg, #FFD700 0%, #FF6B6B 50%, #4ECDC4 100%)' : '#0A0A0A',
+                border: '1px solid #FFFFFF'
+              }
+            }}
+            aria-label={divineLightActive ? "Disable divine light" : "Enable divine light"}
+          >
+            <Box sx={{ fontSize: 24, fontWeight: 'bold' }}>✦</Box>
           </IconButton>
         </Tooltip>
       </MUIBox>
