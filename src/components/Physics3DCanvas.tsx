@@ -1420,18 +1420,19 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       <MUIBox
         sx={{
           position: 'absolute',
-          top: 20,
-          right: 20,
+          top: { xs: 10, sm: 20 },
+          right: { xs: 10, sm: 20 },
           display: 'flex',
           flexDirection: 'column',
-          gap: 2
+          gap: { xs: 1, sm: 2 },
+          zIndex: 1000
         }}
       >
         {/* Floating Controls */}
         <MUIBox
         sx={{
           display: 'flex',
-          gap: 0.5,
+          gap: { xs: 0.25, sm: 0.5 },
           flexDirection: 'column'
         }}
         role="toolbar"
@@ -1445,8 +1446,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               background: '#000000',
               border: '1px solid #333333',
               color: '#FFFFFF',
-              width: 48,
-              height: 48,
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
               '&:hover': {
                 background: '#0A0A0A',
                 border: '1px solid #FFFFFF'
@@ -1454,7 +1455,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label={isMuted ? "Unmute audio" : "Mute audio"}
           >
-            <MUIBox sx={{ fontSize: 20 }}>{isMuted ? '◉' : '◎'}</MUIBox>
+            <MUIBox sx={{ fontSize: { xs: 16, sm: 20 } }}>{isMuted ? '◉' : '◎'}</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1466,8 +1467,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               background: echoMode === 'short' ? '#0A0A0A' : '#000000',
               border: echoMode === 'short' ? '1px solid #FFFFFF' : '1px solid #333333',
               color: '#FFFFFF',
-              width: 48,
-              height: 48,
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
               '&:hover': {
                 background: '#0A0A0A',
                 border: '1px solid #FFFFFF'
@@ -1475,7 +1476,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Enable short echo mode"
           >
-            <MUIBox sx={{ fontSize: 16 }}>∿</MUIBox>
+            <MUIBox sx={{ fontSize: { xs: 12, sm: 16 } }}>∿</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1486,8 +1487,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               background: echoMode === 'long' ? '#0A0A0A' : '#000000',
               border: echoMode === 'long' ? '1px solid #FFFFFF' : '1px solid #333333',
               color: '#FFFFFF',
-              width: 48,
-              height: 48,
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
               '&:hover': {
                 background: '#0A0A0A',
                 border: '1px solid #FFFFFF'
@@ -1495,7 +1496,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Enable long echo mode"
           >
-            <MUIBox sx={{ fontSize: 18 }}>∿∿</MUIBox>
+            <MUIBox sx={{ fontSize: { xs: 14, sm: 18 } }}>∿∿</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1506,8 +1507,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               background: echoMode === 'off' ? '#0A0A0A' : '#000000',
               border: echoMode === 'off' ? '1px solid #FFFFFF' : '1px solid #333333',
               color: '#FFFFFF',
-              width: 48,
-              height: 48,
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
               '&:hover': {
                 background: '#0A0A0A',
                 border: '1px solid #FFFFFF'
@@ -1515,7 +1516,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label="Disable echo"
           >
-            <MUIBox sx={{ fontSize: 20 }}>○</MUIBox>
+            <MUIBox sx={{ fontSize: { xs: 16, sm: 20 } }}>○</MUIBox>
           </IconButton>
         </Tooltip>
 
@@ -1527,8 +1528,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               background: divineLightActive ? 'linear-gradient(135deg, #FFD700 0%, #FF6B6B 50%, #4ECDC4 100%)' : '#000000',
               border: divineLightActive ? '2px solid #FFD700' : '1px solid #333333',
               color: '#FFFFFF',
-              width: 48,
-              height: 48,
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
               '&:hover': {
                 background: divineLightActive ? 'linear-gradient(135deg, #FFD700 0%, #FF6B6B 50%, #4ECDC4 100%)' : '#0A0A0A',
                 border: '1px solid #FFFFFF'
@@ -1536,7 +1537,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             }}
             aria-label={divineLightActive ? "Disable divine light" : "Enable divine light"}
           >
-            <MUIBox sx={{ fontSize: 24, fontWeight: 'bold' }}>✦</MUIBox>
+            <MUIBox sx={{ fontSize: { xs: 20, sm: 24 }, fontWeight: 'bold' }}>✦</MUIBox>
           </IconButton>
         </Tooltip>
       </MUIBox>
@@ -1546,35 +1547,37 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       <MUIBox
         sx={{
           position: 'absolute',
-          bottom: 20,
-          right: 20,
+          bottom: { xs: 10, sm: 20 },
+          left: { xs: 10, sm: 'auto' },
+          right: { xs: 10, sm: 20 },
           background: '#000000',
           border: '1px solid #333333',
           borderRadius: 0.65,
-          padding: 1.3,
+          padding: { xs: 0.8, sm: 1.3 },
           display: 'flex',
           flexDirection: 'column',
-          gap: 0.975,
-          maxWidth: 'none'
+          gap: { xs: 0.5, sm: 0.975 },
+          maxWidth: 'none',
+          zIndex: 1000
         }}
         role="toolbar"
         aria-label="Module selector"
       >
         <Typography variant="caption" sx={{
-          fontSize: '0.65rem',
+          fontSize: { xs: '0.5rem', sm: '0.65rem' },
           letterSpacing: '0.15em',
           color: '#888888',
           textAlign: 'center',
-          mb: 0.325
+          mb: { xs: 0.2, sm: 0.325 }
         }}>
           MODULES (1-8)
         </Typography>
         <MUIBox sx={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: 0.975,
+          gap: { xs: 0.5, sm: 0.975 },
           justifyContent: 'center',
-          minWidth: 208
+          minWidth: { xs: 'auto', sm: 208 }
         }}>
           {[
             { type: 'marble', symbol: '◉', name: 'ORIGIN', key: '1' },
@@ -1597,9 +1600,9 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
                   background: selectedNodeType === module.type ? '#0A0A0A' : '#000000',
                   border: selectedNodeType === module.type ? '1px solid #FFFFFF' : '1px solid #333333',
                   color: '#FFFFFF',
-                  width: 41.6,
-                  height: 41.6,
-                  minWidth: 41.6,
+                  width: { xs: 32, sm: 41.6 },
+                  height: { xs: 32, sm: 41.6 },
+                  minWidth: { xs: 32, sm: 41.6 },
                   padding: 0,
                   flexDirection: 'column',
                   gap: 0,
@@ -1612,20 +1615,21 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
                 aria-pressed={selectedNodeType === module.type}
               >
                 <MUIBox sx={{
-                  fontSize: '0.91rem',
+                  fontSize: { xs: '0.7rem', sm: '0.91rem' },
                   lineHeight: 1,
                   fontWeight: selectedNodeType === module.type ? 600 : 400,
-                  height: 15.6
+                  height: { xs: 12, sm: 15.6 }
                 }}>
                   {module.symbol}
                 </MUIBox>
                 <Typography
                   sx={{
-                    fontSize: '0.065rem !important',
+                    fontSize: { xs: '0.05rem !important', sm: '0.065rem !important' },
                     letterSpacing: '0.05em',
                     color: selectedNodeType === module.type ? '#FFFFFF' : '#888888',
                     lineHeight: 1,
-                    fontWeight: selectedNodeType === module.type ? 500 : 400
+                    fontWeight: selectedNodeType === module.type ? 500 : 400,
+                    display: { xs: 'none', sm: 'block' }
                   }}
                 >
                   {module.name}
