@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, Suspense } from 'react';
+import React, { useRef, useEffect, useState, Suspense, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -37,34 +37,31 @@ interface RippleProps {
 
 const Ripple = React.memo(({ position, color = "#FF4757", onComplete }: RippleProps) => {
   const meshRef = useRef<THREE.Mesh>(null);
-  const [life, setLife] = useState(1); // 1 to 0
-  const rippleDuration = 1.0; // seconds
+  const [life, setLife] = useState(1);
+  const rippleDuration = 1.0;
   const completedRef = useRef(false);
+
+  // Memoized geometry and material for performance
+  const geometry = useMemo(() => new THREE.RingGeometry(0.1, 0.3, 16), []); // Reduced from 32 to 16
 
   useFrame((_state, delta) => {
     const decay = delta / rippleDuration;
-    setLife(prev => {
-      const newLife = Math.max(0, prev - decay);
-      return newLife;
-    });
+    setLife(prev => Math.max(0, prev - decay));
 
-    // Animate ripple expansion
     if (meshRef.current) {
-      const scale = 1 + (1 - life) * 3; // Expand from 1x to 4x
+      const scale = 1 + (1 - life) * 3;
       meshRef.current.scale.set(scale, scale, scale);
     }
 
-    // Call onComplete after state update (not in setState)
     if (life <= 0 && !completedRef.current && onComplete) {
       completedRef.current = true;
-      // Defer to next frame to avoid setState in render
       setTimeout(() => onComplete(), 0);
     }
   });
 
   return (
     <mesh ref={meshRef} position={position} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[0.1, 0.3, 32]} />
+      <ringGeometry args={[0.1, 0.3, 16]} />
       <meshBasicMaterial
         color={color}
         transparent
@@ -1202,9 +1199,9 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         onComplete={() => setCompletionCelebration(prev => ({ ...prev, enabled: false }))}
       />
 
-      {/* Atmosphere particles - reduced for performance */}
+      {/* Atmosphere particles - further reduced for performance */}
       <group>
-        {Array.from({ length: 8 }, (_, i) => (
+        {Array.from({ length: 4 }, (_, i) => (
           <Sphere key={i} args={[0.02]} position={[
             (Math.random() - 0.5) * 30,
             Math.random() * 15 + 5,
@@ -1331,24 +1328,29 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       tabIndex={0}
     >
       <Canvas
-        shadows
+        shadows={false}
         gl={{
-          antialias: true,
+          antialias: false,
           alpha: false,
-          powerPreference: "high-performance"
+          powerPreference: "high-performance",
+          stencil: true,
+          depth: true
         }}
+        dpr={[1, 1.5]}
         camera={{ position: [15, 12, 15], fov: 60 }}
+        frameloop="always"
       >
         <Suspense fallback={null}>
           <Physics
             gravity={[0, -15, 0]}
-            iterations={4} // Reduced from default 10 for better performance
-            broadphase="Naive" // Naive is faster for small numbers of objects
+            iterations={3} // Further reduced for mobile
+            broadphase="Naive"
             defaultContactMaterial={{
               friction: 0.4,
               restitution: 0.7
             }}
-            allowSleep={true} // Enable sleeping for static objects
+            allowSleep={true}
+            size={10} // World size for optimization
           >
             <Scene
               nodes={nodes}
@@ -1640,6 +1642,12 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         </MUIBox>
       </MUIBox>
     </MUIBox>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  return (
+    prevProps.nodes === nextProps.nodes &&
+    prevProps.selectedNodeType === nextProps.selectedNodeType
   );
 });
 Physics3DCanvas.displayName = 'Physics3DCanvas';
