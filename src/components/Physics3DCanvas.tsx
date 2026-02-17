@@ -776,7 +776,7 @@ const Ground = React.memo(() => {
 Ground.displayName = 'Ground';
 
 // 3D Scene Component
-const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, divineLightActive }: any) => {
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, divineLightActive, marbleDropTrigger }: any) => {
   const [marbles, setMarbles] = useState<any[]>([]);
   const [ripples, setRipples] = useState<Array<{ id: string; position: [number, number, number]; color: string }>>([]);
 
@@ -811,6 +811,20 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     active: false,
     flawlessHits: 0
   });
+
+  // Handle Space key marble drop trigger
+  useEffect(() => {
+    if (marbleDropTrigger > 0 && selectedNodeType === 'marble') {
+      // Drop marble at random position near center
+      const x = (Math.random() - 0.5) * 8;
+      const z = (Math.random() - 0.5) * 8;
+      const newMarble = {
+        id: `marble-${Date.now()}-${marbleDropTrigger}`,
+        position: [x, 8, z] as [number, number, number]
+      };
+      setMarbles(prev => [...prev, newMarble]);
+    }
+  }, [marbleDropTrigger, selectedNodeType]);
 
   // Calculate multiplier based on combo count
   const calculateMultiplier = (combo: number): number => {
@@ -1243,6 +1257,9 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     totalScore: 0
   });
 
+  // Marble drop trigger state
+  const [marbleDropTrigger, setMarbleDropTrigger] = useState(0);
+
   useEffect(() => {
     const initializeBridge = async () => {
       try {
@@ -1304,6 +1321,13 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     } else if (event.key === 'l' || event.key === 'L') {
       // Toggle divine light
       handleDivineLightToggle();
+    } else if (event.key === ' ' || event.key === 'Space') {
+      // Drop marble with Space key
+      if (selectedNodeType === 'marble') {
+        event.preventDefault();
+        // Trigger marble drop by incrementing counter
+        setMarbleDropTrigger(prev => prev + 1);
+      }
     } else if (event.key >= '1' && event.key <= '8') {
       // Module selection with number keys 1-8
       const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'];
@@ -1364,6 +1388,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               onNodeAdd={onNodeAdd}
               onStatsUpdate={(stats: any) => setDisplayStats(stats)}
               divineLightActive={divineLightActive}
+              marbleDropTrigger={marbleDropTrigger}
             />
           </Physics>
         </Suspense>
