@@ -242,6 +242,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
             <Physics
               gravity={PHYSICS.gravity}
               iterations={PHYSICS.iterations}
+              stepSize={PHYSICS.stepSize}
+              maxSubSteps={PHYSICS.maxSubSteps}
               broadphase={PHYSICS.broadphase}
               defaultContactMaterial={PHYSICS.defaultContactMaterial}
               allowSleep={PHYSICS.allowSleep}

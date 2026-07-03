@@ -25,6 +25,12 @@ export const PHYSICS = {
   // Hinge (seesaw) + kinematic (spinner) need a bit more solver headroom than
   // plain contacts.
   iterations: 5,
+  // Fixed timestep with a hard catch-up cap: without maxSubSteps a slow frame
+  // makes the worker run extra substeps, which slows the next frame further —
+  // a death spiral that reads as a freeze under load. Capping at 3 trades
+  // slight slow-motion during spikes for a stable frame rate.
+  stepSize: 1 / 60,
+  maxSubSteps: 3,
   broadphase: 'Naive' as const,
   defaultContactMaterial: { friction: 0.4, restitution: 0.7 },
   allowSleep: true,
