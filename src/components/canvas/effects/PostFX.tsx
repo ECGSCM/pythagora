@@ -26,11 +26,13 @@ export const PostFX = () => {
       intensity={POSTFX.bloom.intensity}
       radius={POSTFX.bloom.radius}
       levels={POSTFX.bloom.levels}
-      resolutionScale={mobile ? POSTFX.mobileBloomResolutionScale : 1}
+      resolutionScale={mobile ? POSTFX.mobileBloomResolutionScale : POSTFX.bloom.resolutionScale}
     />,
     <Vignette key="vignette" offset={POSTFX.vignette.offset} darkness={POSTFX.vignette.darkness} />,
   ];
   if (!mobile) effects.push(<Noise key="noise" opacity={POSTFX.noise.opacity} />);
 
-  return <EffectComposer>{effects}</EffectComposer>;
+  // multisampling=0: MSAA on the composer's buffers is expensive and pointless
+  // here — bloom/grain hide aliasing, and the base render has antialias:false.
+  return <EffectComposer multisampling={0}>{effects}</EffectComposer>;
 };

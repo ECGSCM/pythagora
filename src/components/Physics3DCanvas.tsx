@@ -232,7 +232,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
             antialias: false,
             alpha: false,
             powerPreference: 'high-performance',
-            stencil: true,
+            stencil: false, // nothing uses the stencil buffer
             depth: true,
           }}
           dpr={[1, 1.5]}

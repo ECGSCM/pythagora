@@ -36,6 +36,9 @@ export const POSTFX = {
     // ≈ halo across half the viewport). 4 levels keeps the corona close to the
     // light source, preserving the dark world.
     levels: 4,
+    // Bloom is low-frequency glow — computing it at half resolution is
+    // visually indistinguishable and roughly quarters the bloom pass cost.
+    resolutionScale: 0.5,
   },
   vignette: { offset: 0.32, darkness: 0.55 },
   noise: { opacity: 0.015 },

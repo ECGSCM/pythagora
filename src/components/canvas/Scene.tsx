@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, PerspectiveCamera, Plane } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Plane } from '@react-three/drei';
 import * as THREE from 'three';
 import type { PatchNode } from '../../types/patch';
 import type { CollisionEvent } from '../../types/events';
-import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA, CONTACT_SHADOWS } from '../../config/world';
+import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA } from '../../config/world';
 import { useGameStore } from '../../stores/gameStore';
 import { useLiveCallback } from './hooks';
 import { Ground } from './Ground';
@@ -189,16 +189,6 @@ export const Scene = React.memo(
 
         <Ground />
 
-        <ContactShadows
-          position={CONTACT_SHADOWS.position}
-          opacity={CONTACT_SHADOWS.opacity}
-          scale={CONTACT_SHADOWS.scale}
-          blur={CONTACT_SHADOWS.blur}
-          far={CONTACT_SHADOWS.far}
-          width={CONTACT_SHADOWS.width}
-          height={CONTACT_SHADOWS.height}
-          resolution={CONTACT_SHADOWS.resolution}
-        />
 
         {/* Invisible interaction plane on the z=0 gameplay plane. */}
         <Plane

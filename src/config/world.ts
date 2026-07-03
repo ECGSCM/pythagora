@@ -292,35 +292,18 @@ export const DIVINE_LIGHT = {
 
 // ==================== GROUND / SHADOWS ====================
 
+// Perf: the ground was a MeshReflectorMaterial (a full extra scene render per
+// frame) plus ContactShadows (a depth render + two blur passes per frame).
+// Both were nearly invisible on a near-black floor and together they roughly
+// tripled the per-frame render cost — removed in the performance pass.
 export const GROUND = {
   planeArgs: [50, 50] as [number, number],
   position: [0, -2, 0] as Vec3,
   reflector: {
-    mirror: 0.15,
-    blur: [256, 256] as [number, number],
-    resolution: 256,
-    mixBlur: 0.7,
-    mixStrength: 0.7,
     color: '#0A0A0F',
-    metalness: 0.3,
-    roughness: 0.3,
   },
 } as const;
 
-export const CONTACT_SHADOWS = {
-  position: [0, -1.9, 0] as Vec3,
-  opacity: 0.3,
-  scale: 20,
-  blur: 1.5,
-  far: 8,
-  // width/height are the shadow-plane dimensions (drei defaults 1, multiplied
-  // by `scale`), NOT the render-target size. The FBO is `resolution` (default
-  // 512, made explicit here). `frames` is intentionally left at its default
-  // (Infinity) because the shadow must track the marbles every frame.
-  width: 1024,
-  height: 1024,
-  resolution: 512,
-} as const;
 
 // ==================== APP: MODULE DEFAULTS + DEMO LAYOUT ====================
 
