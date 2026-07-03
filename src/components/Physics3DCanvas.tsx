@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, Suspense } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useLayoutEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -11,7 +11,7 @@ import {
   MeshReflectorMaterial,
   Plane
 } from '@react-three/drei';
-import { Physics, useSphere, useBox, useCylinder, usePlane } from '@react-three/cannon';
+import { Physics, useSphere, useBox, useCylinder, useCompoundBody, usePlane, useHingeConstraint } from '@react-three/cannon';
 import { SynthBridge3D, type Collision3DEvent } from '../engines/synthBridge3D';
 import { PatchNode } from '../types/patch';
 import { Box as MUIBox, IconButton, Tooltip, Typography } from '@mui/material';
@@ -38,8 +38,15 @@ interface UnlocksState {
 interface MarbleState {
   id: string;
   position: Vec3;
-  completed?: boolean;
 }
+
+// Fixed ambient dust positions around the play area.
+const ATMOSPHERE_PARTICLE_POSITIONS: Vec3[] = [
+  [-9, 8, -12],
+  [11, 14, 6],
+  [-4, 17, 9],
+  [7, 6, -8]
+];
 
 interface Physics3DCanvasProps {
   nodes: PatchNode[];
@@ -47,6 +54,56 @@ interface Physics3DCanvasProps {
   onCollision?: CollisionHandler;
   onModuleTypeChange?: (moduleType: PatchNode['type']) => void;
   selectedNodeType?: PatchNode['type'];
+  onClearAll?: () => void;
+  onToggleHelp?: () => void;
+  onExit?: () => void;
+}
+
+/**
+ * Returns a stable function that always calls the latest version of the
+ * handler. Physics body factories (useSphere/useBox/...) register their
+ * event callbacks exactly once at mount, so passing a raw closure freezes
+ * whatever state it captured — the root cause of the broken combo system
+ * (REFACTORING_PLAN.md P4). Routing calls through a ref keeps the body's
+ * callback pointing at fresh state without re-creating the body.
+ */
+function useLiveCallback<Args extends unknown[]>(handler: (...args: Args) => void): (...args: Args) => void {
+  const handlerRef = useRef(handler);
+  useLayoutEffect(() => {
+    handlerRef.current = handler;
+  });
+  return useCallback((...args: Args) => handlerRef.current(...args), []);
+}
+
+/**
+ * drei's Text suspends while troika fetches font data from a CDN
+ * (cdn.jsdelivr.net). If that host is unreachable — offline PWA use, blocked
+ * networks — the promise never settles and every ancestor Suspense hangs,
+ * which used to black-screen the entire scene. Each label gets its own
+ * Suspense island so the worst case is just a missing label.
+ */
+const SceneLabel = (props: React.ComponentProps<typeof Text>) => (
+  <Suspense fallback={null}>
+    <Text {...props} />
+  </Suspense>
+);
+
+/**
+ * Drives a hit-flash on a material imperatively from the frame loop, based on
+ * the timestamp of the module's most recent marble hit. Avoids per-hit React
+ * re-renders and works no matter how the hit was delivered.
+ */
+function useHitFlash(hitAt: number | undefined, baseColor: string, flashColor: string, durationMs: number) {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(() => {
+    const mat = matRef.current;
+    if (!mat) return;
+    const active = hitAt !== undefined && Date.now() - hitAt < durationMs;
+    mat.color.set(active ? flashColor : baseColor);
+    mat.emissive.set(active ? flashColor : baseColor);
+    mat.emissiveIntensity = active ? 0.35 : 0.1;
+  });
+  return matRef;
 }
 
 // Ripple Effect Component for collisions
@@ -124,7 +181,7 @@ const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: 
   return (
     <group ref={meshRef} position={[0, 8, 0]}>
       {show && (
-        <Text
+        <SceneLabel
           fontSize={1.5}
           color={color}
           anchorX="center"
@@ -139,7 +196,7 @@ const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: 
             emissive={color}
             emissiveIntensity={0.5}
           />
-        </Text>
+        </SceneLabel>
       )}
     </group>
   );
@@ -237,7 +294,7 @@ const CompletionCelebration = React.memo(({ enabled, onComplete }: {
       </mesh>
 
       {/* "COMPLETE!" text */}
-      <Text
+      <SceneLabel
         fontSize={2}
         color="#FFD700"
         anchorX="center"
@@ -250,7 +307,7 @@ const CompletionCelebration = React.memo(({ enabled, onComplete }: {
           emissive="#FFD700"
           emissiveIntensity={0.8}
         />
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
@@ -288,7 +345,7 @@ const PerfectRunIndicator = React.memo(({ active, flawlessHits }: {
       </mesh>
 
       {/* Text */}
-      <Text
+      <SceneLabel
         fontSize={1.2}
         color="#FFD700"
         anchorX="center"
@@ -301,9 +358,9 @@ const PerfectRunIndicator = React.memo(({ active, flawlessHits }: {
           emissive="#FFD700"
           emissiveIntensity={0.8}
         />
-      </Text>
+      </SceneLabel>
 
-      <Text
+      <SceneLabel
         fontSize={0.6}
         color="#FFFFFF"
         anchorX="center"
@@ -316,7 +373,7 @@ const PerfectRunIndicator = React.memo(({ active, flawlessHits }: {
           transparent
           opacity={0.8}
         />
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
@@ -418,13 +475,24 @@ const ParticleTrail = React.memo(({ marblePosition, color }: { marblePosition: T
 ParticleTrail.displayName = 'ParticleTrail';
 
 interface MarbleProps {
+  id: string;
   position: Vec3;
   onCollide: CollisionHandler;
+  /** Called once when the marble finishes its run (comes to rest or falls out of the world). */
+  onSettle: (id: string) => void;
   unlocks: UnlocksState;
 }
 
+// How long a marble must sit still before it counts as "journey complete".
+const MARBLE_REST_SECONDS = 2.5;
+const MARBLE_REST_SPEED = 0.15;
+const MARBLE_FALL_LIMIT_Y = -8;
+
 // Enhanced Marble Component with trail effect
-const Marble = React.memo(({ position, onCollide, unlocks }: MarbleProps) => {
+const Marble = React.memo(({ id, position, onCollide, onSettle, unlocks }: MarbleProps) => {
+  const liveOnCollide = useLiveCallback(onCollide);
+  const liveOnSettle = useLiveCallback(onSettle);
+
   const [ref, api] = useSphere<THREE.Mesh>(() => ({
     mass: 1,
     position,
@@ -434,38 +502,65 @@ const Marble = React.memo(({ position, onCollide, unlocks }: MarbleProps) => {
       friction: 0.3
     },
     onCollide: (e) => {
-      const nodeId = (e.body.userData as { nodeId?: string } | undefined)?.nodeId;
+      const nodeId = (e.body?.userData as { nodeId?: string } | undefined)?.nodeId;
       if (nodeId) {
-        // NOTE: cannon-es reports contact.contactPoint as a [x,y,z] array, not
-        // an {x,y,z} object. This shape mismatch pre-dates Phase 1 and is left
-        // as-is here (behavior-preserving cast); Phase 2/3 addresses it properly.
+        // cannon-es reports contactPoint as an [x, y, z] tuple.
+        const cp = e.contact?.contactPoint as number[] | undefined;
         const collisionEvent: Collision3DEvent = {
           nodeId,
-          velocity: e.contact?.impactVelocity || 5,
-          position: (e.contact?.contactPoint as unknown as { x: number; y: number; z: number }) || { x: 0, y: 0, z: 0 },
+          velocity: Math.abs(e.contact?.impactVelocity ?? 5),
+          position: cp ? { x: cp[0], y: cp[1], z: cp[2] } : { x: 0, y: 0, z: 0 },
           timestamp: Date.now()
         };
-        onCollide(collisionEvent);
+        liveOnCollide(collisionEvent);
       }
     }
   }));
 
-  // Track marble position for particle trail
+  // Live physics state, lifted out of React render (position drives the
+  // trail + settle detection; velocity drives settle detection only).
   const marblePosition = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+  const marbleSpeed = useRef(0);
+  const restTime = useRef(0);
+  const settled = useRef(false);
 
-  // Subscribe to position updates (only once)
   useEffect(() => {
-    const unsubscribe = api.position.subscribe((pos: [number, number, number]) => {
+    const unsubPos = api.position.subscribe((pos) => {
       marblePosition.current.set(pos[0], pos[1], pos[2]);
     });
-    return () => unsubscribe();
-  }, [api.position]);
+    const unsubVel = api.velocity.subscribe((vel) => {
+      marbleSpeed.current = Math.hypot(vel[0], vel[1], vel[2]);
+    });
+    return () => {
+      unsubPos();
+      unsubVel();
+    };
+  }, [api.position, api.velocity]);
 
-  useFrame(() => {
+  useFrame((_state, delta) => {
     const mesh = ref.current;
     if (mesh) {
       mesh.rotation.x += 0.02;
       mesh.rotation.y += 0.02;
+    }
+
+    if (settled.current) return;
+
+    // A marble's run ends when it falls out of the world or rests anywhere
+    // (ground or module) long enough. Scene removes it and celebrates.
+    if (marblePosition.current.y < MARBLE_FALL_LIMIT_Y) {
+      settled.current = true;
+      liveOnSettle(id);
+      return;
+    }
+    if (marbleSpeed.current < MARBLE_REST_SPEED) {
+      restTime.current += delta;
+      if (restTime.current >= MARBLE_REST_SECONDS) {
+        settled.current = true;
+        liveOnSettle(id);
+      }
+    } else {
+      restTime.current = 0;
     }
   });
 
@@ -497,19 +592,28 @@ interface StaticModuleProps {
   position: Vec3;
   nodeId: string;
   params: ModuleParams;
+  /** Timestamp of the most recent marble hit on this module (drives flash visuals). */
+  hitAt?: number;
 }
 
 // Ramp Component - For guiding marbles
 const Ramp = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+  const angleRad = (Number(params.angle ?? 15)) * Math.PI / 180;
+
+  // The tilt must live on the physics body, not just the mesh — otherwise
+  // the collider stays flat and marbles never roll (REFACTORING_PLAN.md P1).
+  // The body's transform drives the group, so the mesh inherits the tilt.
   const [ref] = useBox<THREE.Group>(() => ({
     position,
+    rotation: [0, 0, angleRad],
     args: [4, 0.2, 2],
     type: 'Static',
+    material: { friction: 0.05, restitution: 0.2 },
     userData: { nodeId }
   }));
 
   return (
-    <group ref={ref} rotation={[0, 0, (params.angle || 15) * Math.PI / 180]}>
+    <group ref={ref}>
       <Box args={[4, 0.2, 2]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#3A3A3A"
@@ -523,35 +627,30 @@ const Ramp = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
 Ramp.displayName = 'Ramp';
 
 // Enhanced Bumper Component
-const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+const Bumper = React.memo(({ position, nodeId, params, hitAt }: StaticModuleProps) => {
   const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [1.2, 1.2, 0.6],
     type: 'Static',
+    material: { restitution: 0.9, friction: 0.2 },
     userData: { nodeId }
   }));
 
-  const [hit, setHit] = useState(false);
-
-  useEffect(() => {
-    if (hit) {
-      const timer = setTimeout(() => setHit(false), 200);
-      return () => clearTimeout(timer);
-    }
-  }, [hit]);
+  const matRef = useHitFlash(hitAt, '#3A3A3A', '#FFFFFF', 200);
 
   return (
     <group ref={ref}>
       <Cylinder args={[1.2, 1.2, 0.6]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={hit ? "#FFFFFF" : "#3A3A3A"}
+          ref={matRef}
+          color="#3A3A3A"
           metalness={0.8}
           roughness={0.2}
-          emissive={hit ? "#FFFFFF" : "#3A3A3A"}
-          emissiveIntensity={hit ? 0.3 : 0.1}
+          emissive="#3A3A3A"
+          emissiveIntensity={0.1}
         />
       </Cylinder>
-      <Text
+      <SceneLabel
         position={[0, 0, 0.4]}
         fontSize={0.25}
         color="white"
@@ -559,14 +658,14 @@ const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
         anchorY="middle"
       >
         ◉ {params.pitch || 'C4'}
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
 Bumper.displayName = 'Bumper';
 
 // Chime Component - Vertical tubes that create melodic sounds
-const Chime = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+const Chime = React.memo(({ position, nodeId, params, hitAt }: StaticModuleProps) => {
   const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [0.15, 0.15, 3],
@@ -574,27 +673,21 @@ const Chime = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
     userData: { nodeId }
   }));
 
-  const [chiming, setChiming] = useState(false);
-
-  useEffect(() => {
-    if (chiming) {
-      const timer = setTimeout(() => setChiming(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [chiming]);
+  const matRef = useHitFlash(hitAt, '#4A4A4A', '#E0E0E0', 500);
 
   return (
     <group ref={ref}>
       <Cylinder args={[0.15, 0.15, 3]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={chiming ? "#E0E0E0" : "#4A4A4A"}
+          ref={matRef}
+          color="#4A4A4A"
           metalness={0.9}
           roughness={0.1}
-          emissive={chiming ? "#E0E0E0" : "#4A4A4A"}
-          emissiveIntensity={chiming ? 0.3 : 0.1}
+          emissive="#4A4A4A"
+          emissiveIntensity={0.1}
         />
       </Cylinder>
-      <Text
+      <SceneLabel
         position={[0, 0, 1.7]}
         fontSize={0.2}
         color="white"
@@ -603,68 +696,46 @@ const Chime = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
         rotation={[0, 0, Math.PI / 2]}
       >
         ✧ {params.note || 'A4'}
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
 Chime.displayName = 'Chime';
 
-interface SpinnerProps extends StaticModuleProps {
-  onCollide?: CollisionHandler;
-}
+// Spinner Component - a kinematic paddle wheel facing the camera. The old
+// version only spun the mesh while its collider stood still and its bespoke
+// collision listener referenced a non-existent `ref.api` — marbles were never
+// deflected (REFACTORING_PLAN.md P2). Now the physics body itself rotates
+// (hub disc + two paddle bars crossing it), so marbles get struck and sound
+// triggers through the normal marble-side collision path.
+const Spinner = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+  const speed = Number(params.speed ?? 1.0);
 
-// Dead collider API shape referenced by the (currently non-firing) Spinner
-// collision listener below — see REFACTORING_PLAN.md P2. `ref.current` is a
-// THREE.Group, which never actually has an `.api` member; this type only
-// exists so the always-false check below still compiles.
-interface DeadColliderRef {
-  api?: {
-    addEventListener: (type: string, cb: (e: unknown) => void) => string;
-    removeEventListener: (type: string, cb: string) => void;
-  };
-}
-
-// Spinner Component - Rotating wheel with multiple note triggers
-const Spinner = React.memo(({ position, nodeId, params, onCollide }: SpinnerProps) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [ref] = useCylinder<THREE.Group>(() => ({
+  // Body-local frame: the body is pre-rotated 90° about X, so local +Y points
+  // at the camera (world +Z) and the wheel's face lies in the world X/Y plane.
+  const [ref, api] = useCompoundBody<THREE.Group>(() => ({
+    type: 'Kinematic',
     position,
-    args: [1.5, 1.5, 0.3],
-    type: 'Static',
-    userData: { nodeId, type: 'spinner' }
+    rotation: [Math.PI / 2, 0, 0],
+    shapes: [
+      // Hub disc (cylinder axis = local Y = world Z)
+      { type: 'Cylinder', args: [0.6, 0.6, 0.4, 12], position: [0, 0, 0] },
+      // Paddle bars crossing the hub, extending past it to radius 1.9
+      { type: 'Box', args: [3.8, 0.35, 0.5], position: [0, 0, 0] },
+      { type: 'Box', args: [0.5, 0.35, 3.8], position: [0, 0, 0] }
+    ],
+    userData: { nodeId }
   }));
 
-  useFrame(() => {
-    if (meshRef.current) {
-      meshRef.current.rotation.z += (params.speed || 1.0) * 0.02;
-    }
-  });
-
-  // Add collision detection for sound
+  // Constant spin about the world Z axis; the physics transform drives the
+  // group, so the visuals rotate with the collider.
   useEffect(() => {
-    const currentRef = ref.current as unknown as DeadColliderRef | null;
-    if (currentRef && currentRef.api) {
-      const handleCollision = (e: unknown) => {
-        console.log('Spinner collision!');
-        const contact = (e as { contact?: { impactVelocity?: number; contactPoint?: { x: number; y: number; z: number } } }).contact;
-        onCollide?.({
-          nodeId,
-          velocity: contact?.impactVelocity || 5,
-          position: contact?.contactPoint || { x: 0, y: 0, z: 0 },
-          timestamp: Date.now()
-        });
-      };
-
-      const collisionHandler = currentRef.api.addEventListener('collide', handleCollision);
-      return () => {
-        currentRef?.api?.removeEventListener('collide', collisionHandler);
-      };
-    }
-  }, [nodeId, onCollide, ref]);
+    api.angularVelocity.set(0, 0, speed * 1.5);
+  }, [api.angularVelocity, speed]);
 
   return (
     <group ref={ref}>
-      <Cylinder ref={meshRef} args={[1.5, 1.5, 0.3]} castShadow receiveShadow>
+      <Cylinder args={[0.6, 0.6, 0.4, 24]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#5A5A5A"
           metalness={0.6}
@@ -673,19 +744,25 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: SpinnerProp
           emissiveIntensity={0.1}
         />
       </Cylinder>
-      <Text
-        position={[0, 0, 0.2]}
-        fontSize={0.2}
-        color="white"
-        anchorX="center"
-        anchorY="middle"
-      >
-        ∞
-      </Text>
+      <RoundedBoxMesh args={[3.8, 0.35, 0.5]} />
+      <RoundedBoxMesh args={[0.5, 0.35, 3.8]} />
     </group>
   );
 });
 Spinner.displayName = 'Spinner';
+
+// Shared paddle-bar mesh for the Spinner.
+const RoundedBoxMesh = ({ args }: { args: Vec3 }) => (
+  <Box args={args} castShadow receiveShadow>
+    <meshStandardMaterial
+      color="#6A6A6A"
+      metalness={0.7}
+      roughness={0.3}
+      emissive="#5A5A5A"
+      emissiveIntensity={0.1}
+    />
+  </Box>
+);
 
 // Funnel Component - Spiral sound effect
 const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
@@ -707,7 +784,7 @@ const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
           emissiveIntensity={0.1}
         />
       </Cylinder>
-      <Text
+      <SceneLabel
         position={[0, 0, 1.1]}
         fontSize={0.25}
         color="white"
@@ -715,48 +792,70 @@ const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
         anchorY="middle"
       >
         ◈
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
 Funnel.displayName = 'Funnel';
 
-// Seesaw Component - Balance-triggered sound
+// Seesaw Component - a real see-saw: a dynamic plank hinged onto a static
+// pivot post, tilting under marble weight (the old version was a static box
+// with no mechanism at all — REFACTORING_PLAN.md P3). The hinge axis is the
+// world Z axis, matching the z=0 gameplay plane.
 const Seesaw = React.memo(({ position, nodeId }: StaticModuleProps) => {
-  const [ref] = useBox<THREE.Group>(() => ({
+  const [plankRef] = useBox<THREE.Group>(() => ({
+    mass: 2,
     position,
     args: [3, 0.2, 0.8],
-    type: 'Static',
+    angularDamping: 0.6,
+    linearDamping: 0.05,
+    material: { friction: 0.4, restitution: 0.3 },
     userData: { nodeId }
   }));
 
+  const [baseRef] = useCylinder<THREE.Mesh>(() => ({
+    type: 'Static',
+    position: [position[0], position[1] - 0.6, position[2]],
+    args: [0.18, 0.4, 1.2, 12]
+  }));
+
+  // Pin the plank's center to the top of the post; free rotation about Z.
+  // Connected bodies don't collide with each other (cannon default), so the
+  // plank swings cleanly on the post.
+  useHingeConstraint(plankRef, baseRef, {
+    pivotA: [0, 0, 0],
+    axisA: [0, 0, 1],
+    pivotB: [0, 0.6, 0],
+    axisB: [0, 0, 1]
+  });
+
   return (
-    <group ref={ref}>
-      <Box args={[3, 0.2, 0.8]} castShadow receiveShadow>
+    <>
+      <group ref={plankRef}>
+        <Box args={[3, 0.2, 0.8]} castShadow receiveShadow>
+          <meshStandardMaterial
+            color="#6A6A6A"
+            metalness={0.5}
+            roughness={0.5}
+            emissive="#6A6A6A"
+            emissiveIntensity={0.1}
+          />
+        </Box>
+      </group>
+      <Cylinder ref={baseRef} args={[0.18, 0.4, 1.2, 12]} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#6A6A6A"
+          color="#4A4A4A"
           metalness={0.5}
-          roughness={0.5}
-          emissive="#6A6A6A"
-          emissiveIntensity={0.1}
+          roughness={0.6}
         />
-      </Box>
-      <Text
-        position={[0, 0, 0.5]}
-        fontSize={0.2}
-        color="white"
-        anchorX="center"
-        anchorY="middle"
-      >
-        ∞
-      </Text>
-    </group>
+      </Cylinder>
+    </>
   );
 });
 Seesaw.displayName = 'Seesaw';
 
 // Bell Component - Harmonic bell sounds
-const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
+const Bell = React.memo(({ position, nodeId, hitAt }: StaticModuleProps) => {
   const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [1, 1.5, 2],
@@ -764,27 +863,21 @@ const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
     userData: { nodeId }
   }));
 
-  const [ringing, setRinging] = useState(false);
-
-  useEffect(() => {
-    if (ringing) {
-      const timer = setTimeout(() => setRinging(false), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [ringing]);
+  const matRef = useHitFlash(hitAt, '#7A7A7A', '#D0D0D0', 1000);
 
   return (
     <group ref={ref}>
       <Cylinder args={[1, 1.5, 2]} castShadow receiveShadow>
         <meshStandardMaterial
-          color={ringing ? "#D0D0D0" : "#7A7A7A"}
+          ref={matRef}
+          color="#7A7A7A"
           metalness={0.9}
           roughness={0.1}
-          emissive={ringing ? "#D0D0D0" : "#7A7A7A"}
-          emissiveIntensity={ringing ? 0.3 : 0.1}
+          emissive="#7A7A7A"
+          emissiveIntensity={0.1}
         />
       </Cylinder>
-      <Text
+      <SceneLabel
         position={[0, 0, 1.2]}
         fontSize={0.3}
         color="white"
@@ -792,7 +885,7 @@ const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
         anchorY="middle"
       >
         ❖
-      </Text>
+      </SceneLabel>
     </group>
   );
 });
@@ -869,24 +962,36 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     enabled: false,
     marblesCompleted: 0
   });
+
+  // Timestamp of the last marble hit per module id — drives hit-flash visuals.
+  const [moduleHits, setModuleHits] = useState<Record<string, number>>({});
   const [perfectRun, setPerfectRun] = useState({
     active: false,
     flawlessHits: 0
   });
 
-  // Handle Space key marble drop trigger
-  useEffect(() => {
-    if (marbleDropTrigger > 0 && selectedNodeType === 'marble') {
-      // Drop marble at random position near center
-      const x = (Math.random() - 0.5) * 8;
-      const z = (Math.random() - 0.5) * 8;
-      const newMarble = {
-        id: `marble-${Date.now()}-${marbleDropTrigger}`,
-        position: [x, 8, z] as [number, number, number]
-      };
-      setMarbles(prev => [...prev, newMarble]);
+  const maxMarbles = 10;
+
+  const addMarble = (position: Vec3) => {
+    const newMarble: MarbleState = {
+      id: `marble-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      position
+    };
+    // Cap enforced at spawn time; settled marbles are removed by onSettle.
+    setMarbles(prev => [...prev, newMarble].slice(-maxMarbles));
+  };
+
+  // Handle Space key marble drops — drop onto the z=0 gameplay plane,
+  // regardless of which module type is selected for placement. Processed in
+  // the frame loop (not an effect) so state updates happen outside render.
+  const processedDropTrigger = useRef(0);
+  useFrame(() => {
+    if (marbleDropTrigger > processedDropTrigger.current) {
+      processedDropTrigger.current = marbleDropTrigger;
+      const x = (Math.random() - 0.5) * 10;
+      addMarble([x, 12, 0]);
     }
-  }, [marbleDropTrigger, selectedNodeType]);
+  });
 
   // Calculate multiplier based on combo count
   const calculateMultiplier = (combo: number): number => {
@@ -897,24 +1002,40 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     return 1;
   };
 
-  // Handle mouse clicks to add modules/marbles
+  // Handle mouse clicks on the vertical z=0 placement plane: the click's
+  // x/y are the world position — marbles spawn right where you click,
+  // modules are placed right where you click (REFACTORING_PLAN.md P7).
+  // The oblique camera maps clicks near the viewport edges to extreme plane
+  // coordinates (even below the ground), so clamp into the play area.
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    const point = e.point;
+    const x = THREE.MathUtils.clamp(e.point.x, -16, 16);
+    const y = THREE.MathUtils.clamp(e.point.y, 0, 24);
 
     if (selectedNodeType === 'marble') {
-      const newMarble: MarbleState = {
-        id: `marble-${Date.now()}`,
-        position: [point.x, 8, point.z]
-      };
-      setMarbles(prev => [...prev, newMarble]);
+      addMarble([x, Math.max(y, 0.5), 0]);
     } else {
-      onNodeAdd?.({ x: point.x, y: point.y + 2, z: point.z });
+      onNodeAdd?.({ x, y, z: 0 });
     }
   };
 
+  // Per-module collision gate: sustained contact fires cannon collide events
+  // every physics step; without a cooldown a resting marble machine-guns
+  // sound/combo/ripples (REFACTORING_PLAN.md P5).
+  const collisionGateRef = useRef<Map<string, number>>(new Map());
+  const COLLISION_COOLDOWN_MS = 120;
+  const MIN_IMPACT_VELOCITY = 1.2;
+
   // Handle collisions and create ripple effects
   const handleCollision = (event: Collision3DEvent) => {
+    if (event.velocity < MIN_IMPACT_VELOCITY) return;
+    const lastHit = collisionGateRef.current.get(event.nodeId) ?? 0;
+    if (event.timestamp - lastHit < COLLISION_COOLDOWN_MS) return;
+    collisionGateRef.current.set(event.nodeId, event.timestamp);
+
+    // Flash the struck module (P11).
+    setModuleHits(prev => ({ ...prev, [event.nodeId]: event.timestamp }));
+
     const now = Date.now();
     const timeSinceLastCollision = now - lastCollisionTime;
 
@@ -1073,52 +1194,24 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
     onStatsUpdate?.(sessionStats);
   }, [sessionStats, onStatsUpdate]);
 
-  // Track marble completions and cleanup (prevent memory overflow)
-  useEffect(() => {
-    const completionThreshold = -5; // Y position below ground
-    const maxMarbles = 10; // Maximum active marbles to prevent memory issues
+  // A marble reports itself done (came to rest / fell out of the world) —
+  // remove it and celebrate the completed run. This replaces the old 500ms
+  // polling loop, which compared against the static spawn position and so
+  // never actually detected completion (REFACTORING_PLAN.md P6).
+  const handleMarbleSettle = (id: string) => {
+    setMarbles(prev => {
+      if (!prev.some(m => m.id === id)) return prev;
+      return prev.filter(m => m.id !== id);
+    });
 
-    const checkCompletions = () => {
-      // Find marbles to remove (completed or too many)
-      setMarbles(prev => {
-        // Mark completed marbles
-        const updated = prev.map(marble => {
-          if (marble.position[1] < completionThreshold && !marble.completed) {
-            // Marble has completed its journey
-            setCompletionCelebration(prev => {
-              const newCount = prev.marblesCompleted + 1;
-              return {
-                enabled: true,
-                marblesCompleted: newCount
-              };
-            });
-
-            // Reset celebration after animation
-            setTimeout(() => {
-              setCompletionCelebration(prev => ({ ...prev, enabled: false }));
-            }, 2000);
-
-            return { ...marble, completed: true };
-          }
-          return marble;
-        });
-
-        // Remove completed marbles AND limit total count
-        const activeMarbles = updated.filter(m => !m.completed);
-
-        // If too many marbles, remove oldest
-        if (activeMarbles.length > maxMarbles) {
-          return activeMarbles.slice(-maxMarbles);
-        }
-
-        // Also remove completed marbles
-        return activeMarbles;
-      });
-    };
-
-    const intervalId = setInterval(checkCompletions, 500);
-    return () => clearInterval(intervalId);
-  }, [marbles]);
+    setCompletionCelebration(prev => ({
+      enabled: true,
+      marblesCompleted: prev.marblesCompleted + 1
+    }));
+    setTimeout(() => {
+      setCompletionCelebration(prev => ({ ...prev, enabled: false }));
+    }, 2000);
+  };
 
   // Module renderer
   const renderModule = (node: PatchNode) => {
@@ -1128,21 +1221,23 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
       0
     ];
 
+    const hitAt = moduleHits[node.id];
+
     switch (node.type) {
       case 'ramp':
-        return <Ramp key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Ramp key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'bumper':
-        return <Bumper key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Bumper key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'chime':
-        return <Chime key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Chime key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'spinner':
-        return <Spinner key={node.id} position={position} nodeId={node.id} params={node.params} onCollide={handleCollision} />;
+        return <Spinner key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'funnel':
-        return <Funnel key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Funnel key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'seesaw':
-        return <Seesaw key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Seesaw key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       case 'bell':
-        return <Bell key={node.id} position={position} nodeId={node.id} params={node.params} />;
+        return <Bell key={node.id} position={position} nodeId={node.id} params={node.params} hitAt={hitAt} />;
       default:
         return null;
     }
@@ -1237,11 +1332,11 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         height={1024}
       />
 
-      {/* Invisible interaction plane */}
+      {/* Invisible interaction plane — vertical, on the z=0 gameplay plane,
+          so clicks map directly to world x/y (REFACTORING_PLAN.md P7). */}
       <Plane
-        args={[50, 50]}
-        position={[0, 0, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        args={[70, 44]}
+        position={[0, 12, 0]}
         onPointerDown={handlePointerDown}
         visible={false}
       />
@@ -1253,8 +1348,10 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
       {marbles.map((marble) => (
         <Marble
           key={marble.id}
+          id={marble.id}
           position={marble.position}
           onCollide={handleCollision}
+          onSettle={handleMarbleSettle}
           unlocks={unlocks}
         />
       ))}
@@ -1275,14 +1372,11 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
         onComplete={() => setCompletionCelebration(prev => ({ ...prev, enabled: false }))}
       />
 
-      {/* Atmosphere particles - further reduced for performance */}
+      {/* Atmosphere particles — fixed positions (random-in-render made them
+          teleport on every re-render; REFACTORING_PLAN.md §0.5) */}
       <group>
-        {Array.from({ length: 4 }, (_, i) => (
-          <Sphere key={i} args={[0.02]} position={[
-            (Math.random() - 0.5) * 30,
-            Math.random() * 15 + 5,
-            (Math.random() - 0.5) * 30
-          ]}>
+        {ATMOSPHERE_PARTICLE_POSITIONS.map((pos, i) => (
+          <Sphere key={i} args={[0.02]} position={pos}>
             <meshStandardMaterial
               color="#00BFA6"
               emissive="#00BFA6"
@@ -1303,7 +1397,10 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   onNodeAdd,
   onCollision,
   onModuleTypeChange,
-  selectedNodeType = 'marble'
+  selectedNodeType = 'marble',
+  onClearAll,
+  onToggleHelp,
+  onExit
 }) => {
   const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -1326,29 +1423,40 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   const [marbleDropTrigger, setMarbleDropTrigger] = useState(0);
 
   useEffect(() => {
+    // Track the bridge in a local so cleanup disposes the instance this
+    // effect actually created (the old cleanup read the `synthBridge` state
+    // from the mount render — always null — so dispose() was unreachable
+    // and the whole audio engine leaked on remount; REFACTORING_PLAN.md A1).
+    let bridge: SynthBridge3D | null = null;
+    let cancelled = false;
+
     const initializeBridge = async () => {
       try {
-        const bridge = new SynthBridge3D({
-          onCollision: (event) => {
-            onCollision?.(event);
-          }
-        });
+        // No onCollision in the bridge config: the Scene-level handler is the
+        // single dispatch point for collision events. Wiring it here as well
+        // made every collision fire the App callback twice (A5).
+        bridge = new SynthBridge3D();
         await bridge.initialize();
+        if (cancelled) {
+          bridge.dispose();
+          return;
+        }
         setSynthBridge(bridge);
         setIsInitialized(true);
       } catch (error) {
-        setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
+        if (!cancelled) {
+          setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
+        }
       }
     };
 
     initializeBridge();
 
     return () => {
-      if (synthBridge) {
-        synthBridge.dispose();
-      }
+      cancelled = true;
+      bridge?.dispose();
+      setSynthBridge(null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fixed in Phase 3 (see REFACTORING_PLAN.md A1): this cleanup captures a stale `synthBridge` (always null on first run), so dispose() is never actually reachable. Adding the real deps here would change when the effect re-runs; the proper fix (ref-based dispose) belongs to Phase 3.
   }, []);
 
   const handleMute = () => {
@@ -1375,34 +1483,53 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     setDivineLightActive(!divineLightActive);
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'm' || event.key === 'M') {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    // Ignore auto-repeat (holding Space shouldn't hose the scene) and
+    // anything typed into a form control.
+    if (event.repeat) return;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+
+    const key = event.key.toLowerCase();
+
+    if (key === 'm') {
       handleMute();
-    } else if (event.key === 'd' || event.key === 'D') {
+    } else if (key === 'd') {
       // Cycle through echo modes: off → short → long → off
       const modes: Array<'off' | 'short' | 'long'> = ['off', 'short', 'long'];
-      const currentIndex = modes.indexOf(echoMode);
-      const nextIndex = (currentIndex + 1) % modes.length;
+      const nextIndex = (modes.indexOf(echoMode) + 1) % modes.length;
       handleEchoModeChange(modes[nextIndex]);
-    } else if (event.key === 'l' || event.key === 'L') {
-      // Toggle divine light
+    } else if (key === 'l') {
       handleDivineLightToggle();
-    } else if (event.key === ' ' || event.key === 'Space') {
-      // Drop marble with Space key
-      if (selectedNodeType === 'marble') {
-        event.preventDefault();
-        // Trigger marble drop by incrementing counter
-        setMarbleDropTrigger(prev => prev + 1);
-      }
-    } else if (event.key >= '1' && event.key <= '8') {
-      // Module selection with number keys 1-8
+    } else if (event.code === 'Space') {
+      event.preventDefault();
+      // Space always drops a marble, regardless of which module type is
+      // selected for placement.
+      setMarbleDropTrigger(prev => prev + 1);
+    } else if (key === 'c') {
+      onClearAll?.();
+    } else if (key === 'h') {
+      onToggleHelp?.();
+    } else if (key === 'escape') {
+      onExit?.();
+    } else if (key >= '1' && key <= '8') {
       const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'] as const;
-      const index = parseInt(event.key) - 1;
+      const index = parseInt(key) - 1;
       if (index >= 0 && index < moduleTypes.length) {
         handleModuleSelect(moduleTypes[index]);
       }
     }
   };
+
+  // Window-level listener: the old React onKeyDown on the wrapper div only
+  // fired when the div happened to have focus, which nothing ever gave it —
+  // shortcuts were dead on page load (REFACTORING_PLAN.md P8). The ref
+  // indirection keeps a single subscription reading fresh state.
+  const liveKeyDown = useLiveCallback(handleKeyDown);
+  useEffect(() => {
+    window.addEventListener('keydown', liveKeyDown);
+    return () => window.removeEventListener('keydown', liveKeyDown);
+  }, [liveKeyDown]);
 
   return (
     <MUIBox
@@ -1412,10 +1539,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         position: 'relative',
         background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
       }}
-      onKeyDown={handleKeyDown}
       role="region"
       aria-label="3D physics canvas for audio synthesis"
-      tabIndex={0}
     >
       <Canvas
         shadows={false}
@@ -1433,7 +1558,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         <Suspense fallback={null}>
           <Physics
             gravity={[0, -15, 0]}
-            iterations={3} // Further reduced for mobile
+            iterations={5} // Hinge (seesaw) + kinematic (spinner) need a bit more solver headroom than plain contacts
             broadphase="Naive"
             defaultContactMaterial={{
               friction: 0.4,

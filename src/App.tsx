@@ -101,43 +101,47 @@ function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [nodes, setNodes] = useState<PatchNode[]>([]);
   const [selectedModuleType, setSelectedModuleType] = useState<PatchNode['type']>('marble');
+  const [showHelp, setShowHelp] = useState(true);
   const [notification, setNotification] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
-  // Transition out of the landing page and seed the initial demo modules.
-  // This used to be a useEffect keyed on [showLanding, nodes.length], but
-  // seeding state in response to a state change is exactly what "Enter" is
-  // for — doing it directly in the click handler is equivalent and avoids
-  // the extra render pass.
+  // Transition out of the landing page. Demo modules are seeded only on the
+  // first entry — returning via ESC and re-entering must not clobber the
+  // user's layout.
   const handleEnter = useCallback(() => {
     setShowLanding(false);
 
-    const demoModules: PatchNode[] = [
-      {
-        id: 'ramp-demo-1',
-        type: 'ramp',
-        position: { x: -5, y: 8 },
-        params: { angle: 30 }
-      },
-      {
-        id: 'bumper-demo-1',
-        type: 'bumper',
-        position: { x: 0, y: 5 },
-        params: { pitch: 'C4' }
-      },
-      {
-        id: 'chime-demo-1',
-        type: 'chime',
-        position: { x: 3, y: 3 },
-        params: { note: 'E4' }
-      },
-      {
-        id: 'bell-demo-1',
-        type: 'bell',
-        position: { x: 6, y: 1 },
-        params: { frequency: 528 }
-      }
-    ];
-    setNodes(demoModules);
+    setNodes(prev => {
+      if (prev.length > 0) return prev;
+      const demoModules: PatchNode[] = [
+        {
+          id: 'ramp-demo-1',
+          type: 'ramp',
+          // Negative angle slopes down toward +x, sending marbles across
+          // the bumper/chime/bell chain to the right.
+          position: { x: -5, y: 8 },
+          params: { angle: -20 }
+        },
+        {
+          id: 'bumper-demo-1',
+          type: 'bumper',
+          position: { x: 0, y: 5 },
+          params: { pitch: 'C4' }
+        },
+        {
+          id: 'chime-demo-1',
+          type: 'chime',
+          position: { x: 3, y: 3 },
+          params: { note: 'E4' }
+        },
+        {
+          id: 'bell-demo-1',
+          type: 'bell',
+          position: { x: 6, y: 1 },
+          params: { frequency: 528 }
+        }
+      ];
+      return demoModules;
+    });
 
     setNotification({
       message: 'Click to drop marbles and create sacred music',
@@ -145,16 +149,25 @@ function App() {
     });
   }, []);
 
-  // Handle adding new modules
+  const handleExitToLanding = useCallback(() => {
+    setShowLanding(true);
+  }, []);
+
+  const handleToggleHelp = useCallback(() => {
+    setShowHelp(prev => !prev);
+  }, []);
+
+  // Handle adding new modules. Placement happens on the vertical z=0 plane,
+  // so the click's x/y map directly to the module position (the old code
+  // folded the raycast z-depth into y — see REFACTORING_PLAN.md P7).
   const handleModuleAdd = useCallback((position: { x: number; y: number; z?: number }) => {
-    if (selectedModuleType === 'marble') return; // Marbles are handled directly by PhysicsCanvas
+    if (selectedModuleType === 'marble') return; // Marbles are handled directly by the canvas
 
     const newModule: PatchNode = {
       id: `${selectedModuleType}-${Date.now()}`,
       type: selectedModuleType,
-      position: { x: position.x, y: position.y + (position.z || 0) },
-      params: getDefaultParams(selectedModuleType),
-      size: getDefaultSize(selectedModuleType)
+      position: { x: position.x, y: position.y },
+      params: getDefaultParams(selectedModuleType)
     };
 
     setNodes(prev => [...prev, newModule]);
@@ -180,8 +193,7 @@ function App() {
     });
   }, []);
 
-  // Clear all modules. Not yet wired to a keyboard shortcut — Phase 2 (P9)
-  // binds this to the "C" key via a window-level keydown listener.
+  // Clear all modules (C key / canvas callback).
   const handleClearAll = useCallback(() => {
     setNodes([]);
     setNotification({
@@ -189,7 +201,6 @@ function App() {
       severity: 'info'
     });
   }, []);
-  void handleClearAll; // Phase 2 asset — wired up later (REFACTORING_PLAN.md P9)
 
   if (showLanding) {
     return (
@@ -222,11 +233,14 @@ function App() {
               onCollision={handleCollision}
               onModuleTypeChange={handleSelectionChange}
               selectedNodeType={selectedModuleType}
+              onClearAll={handleClearAll}
+              onToggleHelp={handleToggleHelp}
+              onExit={handleExitToLanding}
             />
           </ErrorBoundary>
 
-          {/* Floating Instructions */}
-          <Card sx={{
+          {/* Floating Instructions (H toggles) */}
+          {showHelp && <Card sx={{
             position: 'absolute',
             bottom: 20,
             left: 20,
@@ -253,12 +267,13 @@ function App() {
                 Space: Drop marble<br/>
                 M: Mute/Unmute<br/>
                 D: Cycle echo (off/short/long)<br/>
+                L: Divine light<br/>
                 C: Clear all<br/>
                 H: Toggle help<br/>
                 ESC: Return to origin
               </Typography>
             </CardContent>
-          </Card>
+          </Card>}
         </Box>
 
         {/* Notifications */}
@@ -303,27 +318,6 @@ function getDefaultParams(moduleType: PatchNode['type']): Record<string, string 
       return { frequency: 440, harmonics: 3 };
     default:
       return {};
-  }
-}
-
-function getDefaultSize(moduleType: PatchNode['type']): { width: number; height: number } {
-  switch (moduleType) {
-    case 'ramp':
-      return { width: 8, height: 2 };
-    case 'bumper':
-      return { width: 3, height: 3 };
-    case 'chime':
-      return { width: 2, height: 6 };
-    case 'spinner':
-      return { width: 4, height: 4 };
-    case 'funnel':
-      return { width: 5, height: 5 };
-    case 'seesaw':
-      return { width: 6, height: 2 };
-    case 'bell':
-      return { width: 3, height: 4 };
-    default:
-      return { width: 2, height: 2 };
   }
 }
 

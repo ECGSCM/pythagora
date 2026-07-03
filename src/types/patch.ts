@@ -6,8 +6,8 @@
 export type PatchNode = {
   id: string
   type: 'marble' | 'ramp' | 'bumper' | 'chime' | 'spinner' | 'funnel' | 'seesaw' | 'bell' | 'gear' | 'osc' | 'filter' | 'lfo' | 'reverb' | 'delay' | 'bitcrusher' | 'chorus'
+  // Gameplay lives on the vertical z=0 plane: x is horizontal, y is height.
   position: { x: number, y: number }
-  size?: { width: number, height: number }
   // Per-module params are read all over audio.ts and Physics3DCanvas.tsx as
   // `params.someField || default` for numbers, strings, and string[]. Typing
   // this as `unknown` would require narrowing/casts at ~20 call sites for no
