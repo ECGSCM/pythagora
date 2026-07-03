@@ -239,3 +239,48 @@ describe('gameStore.registerCollision moduleHits cap', () => {
     expect(moduleHits['module-0']).toBeUndefined();
   });
 });
+
+// Adaptive quality tier (COMMERCIAL_GRADE_PLAN.md §7D): PerformanceMonitor
+// drives these via stepQualityTierDown/Up (onDecline/onIncline) and
+// setQualityTier('low') (onFallback). qualityTier is a UI/preference-style
+// slice, not gameplay state, so it deliberately does NOT get touched by
+// reset() — that's asserted explicitly below.
+describe('gameStore qualityTier', () => {
+  beforeEach(() => {
+    useGameStore.getState().setQualityTier('high');
+  });
+
+  it('setQualityTier sets the tier directly', () => {
+    useGameStore.getState().setQualityTier('low');
+    expect(useGameStore.getState().qualityTier).toBe('low');
+    useGameStore.getState().setQualityTier('medium');
+    expect(useGameStore.getState().qualityTier).toBe('medium');
+  });
+
+  it('stepQualityTierDown steps high -> medium -> low, then stops', () => {
+    const { stepQualityTierDown } = useGameStore.getState();
+    stepQualityTierDown();
+    expect(useGameStore.getState().qualityTier).toBe('medium');
+    stepQualityTierDown();
+    expect(useGameStore.getState().qualityTier).toBe('low');
+    stepQualityTierDown();
+    expect(useGameStore.getState().qualityTier).toBe('low'); // never below low
+  });
+
+  it('stepQualityTierUp steps low -> medium -> high, then stops', () => {
+    useGameStore.getState().setQualityTier('low');
+    const { stepQualityTierUp } = useGameStore.getState();
+    stepQualityTierUp();
+    expect(useGameStore.getState().qualityTier).toBe('medium');
+    stepQualityTierUp();
+    expect(useGameStore.getState().qualityTier).toBe('high');
+    stepQualityTierUp();
+    expect(useGameStore.getState().qualityTier).toBe('high'); // never above high
+  });
+
+  it('reset() does not touch qualityTier (a UI preference, not gameplay state)', () => {
+    useGameStore.getState().setQualityTier('low');
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().qualityTier).toBe('low');
+  });
+});

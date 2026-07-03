@@ -2,19 +2,39 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import { Physics } from '@react-three/cannon';
+import { PerformanceMonitor } from '@react-three/drei';
 import { Box as MUIBox, Typography } from '@mui/material';
 import { AudioEngine } from '../audio/engine';
 import type { PatchNode } from '../types/patch';
 import { PHYSICS, GAMEPLAY } from '../config/world';
-import { PRESENCE } from '../config/experience';
+import { PRESENCE, POSTFX, QUALITY_TIERS } from '../config/experience';
 import { useGameStore } from '../stores/gameStore';
 import { Scene } from './canvas/Scene';
+import { QualityController } from './canvas/QualityController';
 import { ControlsOverlay } from './ui/ControlsOverlay';
 import { ModuleSelector } from './ui/ModuleSelector';
 import { useLiveCallback } from './canvas/hooks';
 import type { SessionSummary } from '../types/session';
 
 type EchoMode = 'off' | 'short' | 'long';
+
+// Adaptive quality (§7D): PerformanceMonitor samples real FPS and steps the
+// store's qualityTier down/up. These handlers are pure store calls with no
+// closure over component state, so they live at module scope (stable
+// references, no re-creation per render) rather than as useCallback in the
+// component below.
+//
+// Bounds [40, 55]: below 40fps for most of a sampling window steps the tier
+// down; above 55fps steps it up. iterations=10 * ms=250 (both defaults) means
+// a decision needs ~2.5s of sustained samples — PerformanceMonitor's own
+// debounce, so no hand-rolled timer is needed here.
+const handlePerfDecline = () => useGameStore.getState().stepQualityTierDown();
+const handlePerfIncline = () => useGameStore.getState().stepQualityTierUp();
+// flipflops={3}: if the tier has already flip-flopped (declined/inclined) 3
+// times, PerformanceMonitor calls onFallback once and stops sampling — pin to
+// 'low' rather than keep oscillating.
+const handlePerfFallback = () => useGameStore.getState().setQualityTier('low');
+const perfMonitorBounds = (): [number, number] => [40, 55];
 
 interface Physics3DCanvasProps {
   nodes: PatchNode[];
@@ -88,6 +108,20 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
         engineInstance?.dispose();
         setEngine(null);
       };
+    }, []);
+
+    // Adaptive quality initial hint (§7D): PerformanceMonitor needs a few
+    // seconds of real samples before its first onDecline can fire, so a
+    // mobile device would otherwise render several seconds at full 'high'
+    // tier (heavy bloom + 200-star field) before dropping — a visible initial
+    // stutter. Narrow viewport width is a reliable enough proxy (same signal
+    // PostFX used to gate its own mobile branch pre-§7D) to start at 'medium'
+    // immediately instead. One-shot, at Physics3DCanvas mount: after this,
+    // only the PerformanceMonitor below moves the tier.
+    useEffect(() => {
+      if (typeof window !== 'undefined' && window.innerWidth < POSTFX.mobileMaxWidth) {
+        useGameStore.getState().setQualityTier('medium');
+      }
     }, []);
 
     const handleMute = () => {
@@ -235,33 +269,48 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
             stencil: false, // nothing uses the stencil buffer
             depth: true,
           }}
-          dpr={[1, 1.5]}
+          dpr={QUALITY_TIERS.high.dpr}
           frameloop="always"
         >
-          <Suspense fallback={null}>
-            <Physics
-              gravity={PHYSICS.gravity}
-              iterations={PHYSICS.iterations}
-              stepSize={PHYSICS.stepSize}
-              maxSubSteps={PHYSICS.maxSubSteps}
-              broadphase={PHYSICS.broadphase}
-              defaultContactMaterial={PHYSICS.defaultContactMaterial}
-              allowSleep={PHYSICS.allowSleep}
-              size={PHYSICS.size}
-            >
-              <Scene
-                nodes={nodes}
-                onCollision={(event) => {
-                  // The engine resumes its own context internally on first hit.
-                  engine?.triggerCollision(event);
-                }}
-                onNodeAdd={onNodeAdd}
-                divineLightActive={divineLightActive}
-                marbleDropTrigger={marbleDropTrigger}
-                followCamera={followCamera}
-              />
-            </Physics>
-          </Suspense>
+          {/* Adaptive quality (§7D): PerformanceMonitor samples real FPS and
+              steps qualityTier down/up (see the module-scope handlers above);
+              QualityController reacts to the tier by pushing a new dpr through
+              r3f's setDpr. Neither needs to wrap Physics/Scene functionally —
+              PerformanceMonitor's own sampling runs off useFrame regardless of
+              where in the tree it sits — but both must be Canvas descendants. */}
+          <PerformanceMonitor
+            bounds={perfMonitorBounds}
+            flipflops={3}
+            onIncline={handlePerfIncline}
+            onDecline={handlePerfDecline}
+            onFallback={handlePerfFallback}
+          >
+            <QualityController />
+            <Suspense fallback={null}>
+              <Physics
+                gravity={PHYSICS.gravity}
+                iterations={PHYSICS.iterations}
+                stepSize={PHYSICS.stepSize}
+                maxSubSteps={PHYSICS.maxSubSteps}
+                broadphase={PHYSICS.broadphase}
+                defaultContactMaterial={PHYSICS.defaultContactMaterial}
+                allowSleep={PHYSICS.allowSleep}
+                size={PHYSICS.size}
+              >
+                <Scene
+                  nodes={nodes}
+                  onCollision={(event) => {
+                    // The engine resumes its own context internally on first hit.
+                    engine?.triggerCollision(event);
+                  }}
+                  onNodeAdd={onNodeAdd}
+                  divineLightActive={divineLightActive}
+                  marbleDropTrigger={marbleDropTrigger}
+                  followCamera={followCamera}
+                />
+              </Physics>
+            </Suspense>
+          </PerformanceMonitor>
         </Canvas>
 
         {/* Loading State */}

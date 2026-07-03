@@ -99,6 +99,28 @@ export const ASCENSION_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [0.0, -0.14],
 ];
 
+// ==================== QUALITY TIER (§7D adaptive quality) ====================
+
+/**
+ * Adaptive quality tier, stepped by drei's PerformanceMonitor off real FPS
+ * (COMMERCIAL_GRADE_PLAN.md §7D). The type lives here rather than in
+ * experience.ts because `effectiveSpawnCap` below is a gameplay/physics
+ * concern that gameStore.ts needs alongside GAMEPLAY/MARBLE — putting it in
+ * experience.ts (which already imports types from this file) would create a
+ * world.ts <-> experience.ts import cycle. experience.ts's per-tier visual
+ * config (dpr/bloom/noise/starfield) imports this same type from here.
+ */
+export type QualityTier = 'high' | 'medium' | 'low';
+
+/** Active marble cap on the 'low' tier — a struggling GPU shouldn't also be
+ * asked to render a full spawnCap of overlapping bloom orbs. */
+export const LOW_QUALITY_SPAWN_CAP = 6;
+
+/** The spawn cap Scene.addMarble should enforce for the current quality tier. */
+export function effectiveSpawnCap(tier: QualityTier): number {
+  return tier === 'low' ? LOW_QUALITY_SPAWN_CAP : MARBLE.spawnCap;
+}
+
 // ==================== MODULES ====================
 
 export const MODULES = {

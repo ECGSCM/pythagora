@@ -14,10 +14,13 @@
 import { create } from 'zustand';
 import type { CollisionEvent } from '../types/events';
 import type { PatchNode } from '../types/patch';
-import { GAMEPLAY, calculateMultiplier } from '../config/world';
+import { GAMEPLAY, calculateMultiplier, type QualityTier } from '../config/world';
 
 /** A moduleHits record past this many keys gets trimmed (see registerCollision). */
 const MODULE_HITS_CAP = 64;
+
+/** Tier order, lightest to heaviest, used by the step actions below. */
+const QUALITY_TIER_ORDER: readonly QualityTier[] = ['high', 'medium', 'low'];
 
 export interface ComboState {
   count: number;
@@ -81,6 +84,14 @@ interface GameState {
    */
   selectedModuleType: PatchNode['type'];
 
+  /**
+   * Adaptive quality tier (COMMERCIAL_GRADE_PLAN.md §7D). A UI/preference-style
+   * value like selectedModuleType — driven by drei's PerformanceMonitor off
+   * real FPS (and by a one-time mobile-viewport hint at mount) rather than by
+   * gameplay — so it deliberately survives reset().
+   */
+  qualityTier: QualityTier;
+
   /** Port of Scene.handleCollision's combo/unlock/stats/perfect-run update. */
   registerCollision: (event: CollisionEvent) => void;
   /** The harmony key stepped — fire the Aurora pulse. */
@@ -99,6 +110,12 @@ interface GameState {
    * flash entries for modules that no longer exist in the scene.
    */
   clearModuleHits: () => void;
+  /** Set the quality tier directly (mobile-hint initializer, or to pin 'low' on PerformanceMonitor's onFallback). */
+  setQualityTier: (tier: QualityTier) => void;
+  /** Step one tier lighter (PerformanceMonitor onDecline); no-ops past 'low'. */
+  stepQualityTierDown: () => void;
+  /** Step one tier heavier (PerformanceMonitor onIncline); no-ops past 'high'. */
+  stepQualityTierUp: () => void;
 }
 
 const initialCombo = (): ComboState => ({ count: 0, multiplier: 1, lastCollisionTime: 0 });
@@ -146,6 +163,7 @@ export const useGameStore = create<GameState>((set, get) => {
     modulation: null,
     moduleHits: {},
     selectedModuleType: 'marble',
+    qualityTier: 'high',
 
     setModulation: (index, name) => {
       set({ modulation: { index, name, at: Date.now() } });
@@ -306,5 +324,19 @@ export const useGameStore = create<GameState>((set, get) => {
     setSelectedModuleType: (type) => set({ selectedModuleType: type }),
 
     clearModuleHits: () => set({ moduleHits: {} }),
+
+    setQualityTier: (tier) => set({ qualityTier: tier }),
+
+    stepQualityTierDown: () => {
+      const idx = QUALITY_TIER_ORDER.indexOf(get().qualityTier);
+      const next = QUALITY_TIER_ORDER[Math.min(idx + 1, QUALITY_TIER_ORDER.length - 1)];
+      set({ qualityTier: next });
+    },
+
+    stepQualityTierUp: () => {
+      const idx = QUALITY_TIER_ORDER.indexOf(get().qualityTier);
+      const next = QUALITY_TIER_ORDER[Math.max(idx - 1, 0)];
+      set({ qualityTier: next });
+    },
   };
 });

@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Plane } from '@react-three/drei';
 import type { PatchNode } from '../../types/patch';
 import type { CollisionEvent } from '../../types/events';
-import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA, clampPlacement } from '../../config/world';
+import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA, clampPlacement, effectiveSpawnCap } from '../../config/world';
 import { useGameStore } from '../../stores/gameStore';
 import { useLiveCallback } from './hooks';
 import { Ground } from './Ground';
@@ -56,6 +56,11 @@ export const Scene = React.memo(
     evictingRef.current = evictingIds;
 
     const addMarble = (position: Vec3) => {
+      // Adaptive quality (§7D): a struggling GPU (qualityTier 'low') gets a
+      // reduced active-marble cap so it isn't also asked to render a full
+      // spawnCap of overlapping bloom orbs. Read imperatively — addMarble is
+      // called from event handlers and the frame loop, not render.
+      const cap = effectiveSpawnCap(useGameStore.getState().qualityTier);
       const newMarble: MarbleState = {
         id: `marble-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         position,
@@ -66,8 +71,8 @@ export const Scene = React.memo(
       // Hard safety clamp: eviction keeps the active count at the cap, but if it
       // ever stalls (a marble that refuses to settle) fall back to the old
       // instant slice so the array can't grow without bound.
-      if (current.length >= MARBLE.spawnCap + 4) {
-        setMarbles([...current, newMarble].slice(-MARBLE.spawnCap));
+      if (current.length >= cap + 4) {
+        setMarbles([...current, newMarble].slice(-cap));
         return;
       }
 
@@ -77,7 +82,7 @@ export const Scene = React.memo(
       // At/over the cap, evict the oldest marble that isn't already evicting —
       // it begins its ascension fade (see <Marble evict>).
       const activeCount = current.reduce((n, m) => (evicting.includes(m.id) ? n : n + 1), 0);
-      if (activeCount >= MARBLE.spawnCap) {
+      if (activeCount >= cap) {
         const oldest = current.find((m) => !evicting.includes(m.id));
         if (oldest) setEvictingIds([...evicting, oldest.id]);
       }

@@ -4,7 +4,7 @@
 // four-color palette, post-processing, aurora, starfield, reward glyphs — read
 // as one system and world.ts stays focused on the machine.
 
-import type { Vec3 } from './world';
+import type { Vec3, QualityTier } from './world';
 
 // ==================== PALETTE (§1.2) ====================
 
@@ -42,10 +42,9 @@ export const POSTFX = {
   },
   vignette: { offset: 0.32, darkness: 0.55 },
   noise: { opacity: 0.015 },
-  // Mobile tier: halve bloom resolution and drop the noise pass.
+  // Narrow-viewport threshold: used once, at mount, as the adaptive-quality
+  // initial tier hint (§7D QUALITY_TIERS below) — not for a per-frame check.
   mobileMaxWidth: 768,
-  mobileDprCap: 1.5,
-  mobileBloomResolutionScale: 0.5,
 } as const;
 
 // ==================== AURORA PULSE (§3.4) ====================
@@ -71,6 +70,49 @@ export const STARFIELD = {
   color: PALETTE.moonlight,
   opacity: 0.5,
   rotationDegPerSec: 0.05,
+} as const;
+
+// ==================== ADAPTIVE QUALITY (§7D) ====================
+
+/**
+ * Per-tier visual budget, stepped by drei's PerformanceMonitor off real FPS
+ * (COMMERCIAL_GRADE_PLAN.md §7D). `bloomEnabled: false` means PostFX skips the
+ * whole EffectComposer (plain render, no post pass at all) rather than just
+ * disabling the Bloom effect inside it.
+ */
+export const QUALITY_TIERS: Record<
+  QualityTier,
+  {
+    dpr: [number, number];
+    bloomEnabled: boolean;
+    bloomResolutionScale: number;
+    noiseEnabled: boolean;
+    starfieldCount: number;
+  }
+> = {
+  high: {
+    dpr: [1, 1.5],
+    bloomEnabled: true,
+    bloomResolutionScale: POSTFX.bloom.resolutionScale,
+    noiseEnabled: true,
+    starfieldCount: STARFIELD.count,
+  },
+  medium: {
+    dpr: [1, 1.25],
+    bloomEnabled: true,
+    bloomResolutionScale: 0.35,
+    noiseEnabled: false,
+    starfieldCount: STARFIELD.count,
+  },
+  low: {
+    dpr: [1, 1],
+    bloomEnabled: false,
+    // Unused while bloomEnabled is false (PostFX renders no EffectComposer at
+    // all on 'low') — kept for type uniformity across tiers.
+    bloomResolutionScale: 0.35,
+    noiseEnabled: false,
+    starfieldCount: 100,
+  },
 } as const;
 
 // ==================== REWARD DISPLAY (§3.5) ====================
