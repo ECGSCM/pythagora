@@ -6,6 +6,8 @@ import { AmbientDrone } from './drone';
 import { createVoice, makePitchContext, type InstrumentName } from './instruments';
 import { HarmonyEngine, KEY_NAMES, keyRatioForRoot, shouldStepKey } from './harmony';
 import {
+  AUDIO_EVENT_WINDOW_MS,
+  AUDIO_EVENTS_PER_100MS,
   BRIGHTNESS_MAX,
   BRIGHTNESS_MIN,
   HARMONY_STEP_INTERVAL,
@@ -86,6 +88,12 @@ export class AudioEngine {
   private collisionCount = 0;
   private modulationListener: ModulationListener | null = null;
 
+  // Audio event budget (Phase 7A): timestamps of recent voice-triggering
+  // collisions, kept as a sliding AUDIO_EVENT_WINDOW_MS window. Beyond
+  // AUDIO_EVENTS_PER_100MS in a window, excess collisions skip voice/drone work
+  // (they still step harmony and feed the reverb send).
+  private readonly recentEventTimes: number[] = [];
+
   constructor() {
     this.bus = new AudioBus();
     this.voices = new VoiceManager(this.bus, createVoice);
@@ -143,12 +151,10 @@ export class AudioEngine {
       void this.resume();
     }
 
-    const instrument = mapInstrument(event);
-    const velocityGain = mapVelocity(event.velocity);
-    const brightness = mapBrightness(event.velocity);
-
     // Harmonic resonance chain (§2.2): every Nth collision steps the circle of
-    // fifths, retunes the pad and notifies the visual layer.
+    // fifths, retunes the pad and notifies the visual layer. This runs for EVERY
+    // collision, even ones the budget drops below, so harmony stepping stays
+    // deterministic under load.
     this.collisionCount += 1;
     if (shouldStepKey(this.collisionCount, HARMONY_STEP_INTERVAL)) {
       this.harmony.getNextHarmony(); // advance the key
@@ -158,12 +164,36 @@ export class AudioEngine {
       this.modulationListener?.(index, KEY_NAMES[index]);
     }
 
+    // Reverb send "feel" persists for dropped collisions too, so a combo storm
+    // still swells the tail even when its voices are budgeted out.
+    this.bus.onCollision(event.velocity);
+
+    // Audio event budget: drop the excess BEFORE any per-voice Tone work.
+    if (this.overAudioBudget()) return;
+
+    const instrument = mapInstrument(event);
+    const velocityGain = mapVelocity(event.velocity);
+    const brightness = mapBrightness(event.velocity);
+
     // Pitches are chosen from the CURRENT key (§2.2): same pentatonic character,
     // transposed by the key root ratio.
     const pitch = makePitchContext(keyRatioForRoot(this.harmony.getCurrentHarmony().root));
     this.voices.play(instrument, velocityGain, brightness, pitch);
-    this.bus.onCollision(event.velocity);
     this.drone.onCollision(instrument);
+  }
+
+  /**
+   * Record this collision in the sliding window and report whether it exceeds
+   * the per-window voice budget. Old timestamps are evicted in place so the
+   * array never grows unbounded.
+   */
+  private overAudioBudget(): boolean {
+    const now = Date.now();
+    const cutoff = now - AUDIO_EVENT_WINDOW_MS;
+    const times = this.recentEventTimes;
+    while (times.length > 0 && times[0] <= cutoff) times.shift();
+    times.push(now);
+    return times.length > AUDIO_EVENTS_PER_100MS;
   }
 
   // ==================== PASSTHROUGHS ====================

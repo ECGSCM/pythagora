@@ -47,10 +47,13 @@ export const MASTER_VOLUME_MAX_DB = 0;
 // The reverb is an aux send: the convolver itself runs fully wet and the
 // audible amount is controlled by `reverbSend`'s linear gain. Ported from
 // audio.ts:102-108 / 412-456.
-
-export const REVERB_BASE_DECAY = 8; // seconds (hall)
-export const REVERB_MIN_DECAY = 2;
-export const REVERB_MAX_DECAY = 20;
+//
+// Phase 7A: the impulse response is generated ONCE at construction with a fixed
+// decay. The old runtime decay modulation (2-20s) regenerated the offline IR on
+// every drift, blocking the main thread for up to 20s during combo storms — the
+// primary freeze. The dynamic "tail grows with activity" feel now lives purely
+// in the send-level dynamics below.
+export const REVERB_FIXED_DECAY = 10; // seconds — long hall, generated once
 
 // Reverb send (linear gain) range, mapped from the old wet range (0.2-0.5).
 export const REVERB_SEND_MIN = 0.2;
@@ -59,7 +62,6 @@ export const REVERB_SEND_DEFAULT = 0.3;
 
 export const REVERB_MONITOR_INTERVAL_MS = 100;
 export const REVERB_SILENCE_THRESHOLD_MS = 3000; // no collisions => "silence"
-export const REVERB_DECAY_EPSILON = 0.25; // only regenerate the buffer past this
 
 // ==================== VELOCITY MAPPING ====================
 // velocityGain = clamp((v - VELOCITY_OFFSET) / VELOCITY_RANGE, MIN, MAX)
@@ -155,11 +157,19 @@ export const BINAURAL_LEVEL_DB = -38;
 export const BINAURAL_FADE_SEC = 1;
 
 // ==================== POLYPHONY ====================
+// Phase 7A: voices are a pre-built, retriggerable pool. Each instrument lazily
+// grows to at most PER_INSTRUMENT_VOICE_CAP persistent voices; play() reuses an
+// idle voice or retriggers the oldest busy one (the "steal" — retriggering
+// restarts its envelope, so no fade/dispose churn). There is no per-hit node
+// allocation and no global cap timer.
 
-export const GLOBAL_VOICE_CAP = 24;
 export const PER_INSTRUMENT_VOICE_CAP = 5;
 
-// Fade lengths (seconds) applied to a voice's output before it is disposed, so
-// teardown never produces a click (A6).
-export const VOICE_STEAL_FADE_SEC = 0.03; // 30ms when a cap steals a voice
-export const VOICE_CLEANUP_FADE_SEC = 0.05; // 50ms at end-of-life
+// ==================== AUDIO EVENT BUDGET (Phase 7A) ====================
+// A sliding window caps how many collisions do Tone voice/drone work per
+// AUDIO_EVENT_WINDOW_MS. Excess collisions still step harmony and feed the
+// reverb send (so the tail "feel" persists) but skip voice triggering — this
+// bounds the per-frame audio cost under combo storms.
+
+export const AUDIO_EVENT_WINDOW_MS = 100;
+export const AUDIO_EVENTS_PER_100MS = 8;

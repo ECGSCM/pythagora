@@ -8,10 +8,7 @@ import {
   MASTER_VOLUME_DEFAULT_DB,
   MASTER_VOLUME_MAX_DB,
   MASTER_VOLUME_MIN_DB,
-  REVERB_BASE_DECAY,
-  REVERB_DECAY_EPSILON,
-  REVERB_MAX_DECAY,
-  REVERB_MIN_DECAY,
+  REVERB_FIXED_DECAY,
   REVERB_BLOOM_ATTACK_SEC,
   REVERB_BLOOM_DECAY_SEC,
   REVERB_BLOOM_GAP_MS,
@@ -33,9 +30,11 @@ import {
  *
  * Every instrument routes through this, so mute / echo / compression / limiting
  * always apply (fixes A3). The reverb is a real, audible aux send (fixes the
- * "reverb never connected" gap in §0.6); its amount and decay are driven by the
- * dynamic monitoring loop ported from the old engine (A2's interval is now
- * stored and cleared in dispose()).
+ * "reverb never connected" gap in §0.6). Its impulse response is generated ONCE
+ * at construction with a fixed decay (Phase 7A); the dynamic "tail grows with
+ * activity" feel is driven entirely by the send-gain monitoring loop, never by
+ * regenerating the IR (that offline render was the primary freeze). A2's
+ * interval is stored and cleared in dispose().
  */
 export class AudioBus {
   private readonly compressor: Tone.Compressor;
@@ -54,11 +53,10 @@ export class AudioBus {
 
   private echoMode: EchoMode = 'off';
 
-  // Reverb tail state (ported from audio.ts:102-108 / 412-456).
+  // Reverb tail state (ported from audio.ts:102-108 / 412-456). Only the send
+  // level is dynamic now — the IR decay is fixed at construction.
   private reverbAccumulation = 0;
   private lastCollisionTime = 0;
-  private dynamicReverbDecay = REVERB_BASE_DECAY;
-  private appliedReverbDecay = REVERB_BASE_DECAY;
   private reverbInterval: ReturnType<typeof setInterval> | null = null;
   // While a "first hit after silence" bloom is decaying, the monitor loop must
   // not fight it by pulling reverbSend back down (§2.4).
@@ -89,8 +87,9 @@ export class AudioBus {
     this.masterVolume.connect(this.meter);
 
     // Reverb aux send: the convolver runs fully wet, `reverbSend` controls how
-    // much dry signal is fed into it.
-    this.reverb = new Tone.Reverb({ decay: REVERB_BASE_DECAY });
+    // much dry signal is fed into it. The IR is generated ONCE here with a fixed
+    // decay — it is never regenerated at runtime (Phase 7A freeze fix).
+    this.reverb = new Tone.Reverb({ decay: REVERB_FIXED_DECAY });
     this.reverb.wet.value = 1;
     this.reverb.connect(this.compressor);
     this.reverbSend = new Tone.Gain(REVERB_SEND_DEFAULT);
@@ -163,25 +162,16 @@ export class AudioBus {
     this.reverbInterval = setInterval(() => {
       const timeSinceLastCollision = Date.now() - this.lastCollisionTime;
 
+      // Accumulation still tracks activity — it just drives the send level now,
+      // not the (fixed) IR decay. The audible "tail grows with activity" intent
+      // survives entirely through reverbSend dynamics.
       if (timeSinceLastCollision > REVERB_SILENCE_THRESHOLD_MS) {
-        this.dynamicReverbDecay = Math.max(REVERB_MIN_DECAY, this.dynamicReverbDecay * 0.95);
         this.reverbAccumulation = Math.max(0, this.reverbAccumulation - 0.02);
       } else {
         this.reverbAccumulation = Math.min(1, this.reverbAccumulation + 0.05);
       }
 
-      const targetDecay =
-        REVERB_MIN_DECAY + this.reverbAccumulation * (REVERB_MAX_DECAY - REVERB_MIN_DECAY);
-      this.dynamicReverbDecay += (targetDecay - this.dynamicReverbDecay) * 0.1;
-
       if (Tone.getContext().state !== 'running') return;
-
-      // Regenerating the convolution buffer is expensive, so only push a new
-      // decay once it has drifted past a small threshold.
-      if (Math.abs(this.dynamicReverbDecay - this.appliedReverbDecay) > REVERB_DECAY_EPSILON) {
-        this.reverb.decay = this.dynamicReverbDecay;
-        this.appliedReverbDecay = this.dynamicReverbDecay;
-      }
 
       // Don't touch the send while a silence-breaking bloom is decaying (§2.4).
       if (Date.now() < this.bloomUntil) return;
