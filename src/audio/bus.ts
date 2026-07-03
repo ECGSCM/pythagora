@@ -12,6 +12,9 @@ import {
   REVERB_DECAY_EPSILON,
   REVERB_MAX_DECAY,
   REVERB_MIN_DECAY,
+  REVERB_BLOOM_ATTACK_SEC,
+  REVERB_BLOOM_DECAY_SEC,
+  REVERB_BLOOM_GAP_MS,
   REVERB_MONITOR_INTERVAL_MS,
   REVERB_SEND_DEFAULT,
   REVERB_SEND_MAX,
@@ -55,6 +58,9 @@ export class AudioBus {
   private dynamicReverbDecay = REVERB_BASE_DECAY;
   private appliedReverbDecay = REVERB_BASE_DECAY;
   private reverbInterval: ReturnType<typeof setInterval> | null = null;
+  // While a "first hit after silence" bloom is decaying, the monitor loop must
+  // not fight it by pulling reverbSend back down (§2.4).
+  private bloomUntil = 0;
 
   constructor() {
     // Master chain (audio.ts:126-142).
@@ -121,9 +127,25 @@ export class AudioBus {
 
   /** Called on every collision to feed the dynamic reverb tail (A2 logic). */
   onCollision(velocity: number): void {
-    this.lastCollisionTime = Date.now();
+    const now = Date.now();
+    const gap = now - this.lastCollisionTime;
+    this.lastCollisionTime = now;
     const velocityFactor = Math.min(1, velocity / 10);
     this.reverbAccumulation = Math.min(1, this.reverbAccumulation + 0.1 * velocityFactor);
+
+    // First hit after a long silence blooms the reverb send to max, then eases
+    // back over a few seconds (§2.4). A short attack ramp avoids a click; the
+    // bloom window keeps the monitor loop from clawing it back.
+    if (gap > REVERB_BLOOM_GAP_MS) {
+      const bloomStart = Tone.now();
+      this.reverbSend.gain.rampTo(REVERB_SEND_MAX, REVERB_BLOOM_ATTACK_SEC, bloomStart);
+      this.reverbSend.gain.rampTo(
+        REVERB_SEND_DEFAULT,
+        REVERB_BLOOM_DECAY_SEC,
+        bloomStart + REVERB_BLOOM_ATTACK_SEC
+      );
+      this.bloomUntil = now + REVERB_BLOOM_DECAY_SEC * 1000;
+    }
   }
 
   private startReverbMonitoring(): void {
@@ -149,6 +171,9 @@ export class AudioBus {
         this.reverb.decay = this.dynamicReverbDecay;
         this.appliedReverbDecay = this.dynamicReverbDecay;
       }
+
+      // Don't touch the send while a silence-breaking bloom is decaying (§2.4).
+      if (Date.now() < this.bloomUntil) return;
 
       const sendGain =
         REVERB_SEND_MIN + this.reverbAccumulation * (REVERB_SEND_MAX - REVERB_SEND_MIN);

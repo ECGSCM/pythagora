@@ -23,6 +23,42 @@ export const CIRCLE_OF_FIFTHS: readonly number[] = [
 
 export const MAX_HARMONY_HISTORY = 10;
 
+// Human-readable key names, index-aligned with CIRCLE_OF_FIFTHS. Used by the
+// modulation listener (Phase 5B Aurora pulse).
+export const KEY_NAMES: readonly string[] = [
+  'C',
+  'G',
+  'D',
+  'A',
+  'E',
+  'B',
+  'F#',
+  'C#',
+  'G#',
+  'D#',
+  'A#',
+  'F',
+  'C',
+];
+
+// Reference root for key transposition: every voice's pitch is multiplied by
+// (current key root / this) so the whole world moves together (§2.2). C4.
+export const REFERENCE_ROOT_HZ = 261.63;
+
+/** Ratio to transpose a C-based pitch into the key rooted at `root`. Pure. */
+export function keyRatioForRoot(root: number): number {
+  return root / REFERENCE_ROOT_HZ;
+}
+
+/**
+ * Pure stepping predicate: the circle-of-fifths key advances one step every
+ * `interval` collisions. Exposed (and unit-tested) separately from the Tone
+ * side so the "every 8th collision" rule is verifiable without audio.
+ */
+export function shouldStepKey(collisionCount: number, interval: number): boolean {
+  return collisionCount > 0 && collisionCount % interval === 0;
+}
+
 // dB/linear-gain confusion (A8) is fixed here: chord voice levels are plain
 // linear gains in 0..1, never decibels.
 export const CHORD_ROOT_GAIN = 0.5;
@@ -73,6 +109,11 @@ export class HarmonyEngine {
   /** Peek the current chord without advancing. */
   getCurrentHarmony(): Chord {
     return this.calculateHarmony(CIRCLE_OF_FIFTHS[this.harmonyIndex]);
+  }
+
+  /** Current index into the circle of fifths (0-based). */
+  getKeyIndex(): number {
+    return this.harmonyIndex;
   }
 
   /** Advance one step along the Circle of Fifths and return the new chord. */

@@ -7,6 +7,8 @@ import { AudioEngine } from '../audio/engine';
 import type { CollisionEvent } from '../types/events';
 import type { PatchNode } from '../types/patch';
 import { PHYSICS } from '../config/world';
+import { SHIMMER_COMBO_THRESHOLD } from '../audio/constants';
+import { useGameStore } from '../stores/gameStore';
 import { Scene } from './canvas/Scene';
 import { ControlsOverlay } from './ui/ControlsOverlay';
 import { ModuleSelector } from './ui/ModuleSelector';
@@ -44,6 +46,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
     const [isMuted, setIsMuted] = useState(false);
     const [echoMode, setEchoMode] = useState<EchoMode>('off');
     const [divineLightActive, setDivineLightActive] = useState(false);
+    const [binauralActive, setBinauralActive] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const [initError, setInitError] = useState<string | null>(null);
 
@@ -103,6 +106,29 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
       setDivineLightActive((prev) => !prev);
     };
 
+    const handleBinauralToggle = () => {
+      const next = !binauralActive;
+      setBinauralActive(next);
+      engine?.setBinaural(next);
+    };
+
+    // Shimmer drone layer follows combo (§2.1): subscribe to the store OUTSIDE
+    // React render so a combo tick never re-renders the canvas — the engine is
+    // poked imperatively only when the threshold is crossed.
+    useEffect(() => {
+      if (!engine) return;
+      let prevActive = useGameStore.getState().combo.count >= SHIMMER_COMBO_THRESHOLD;
+      engine.setShimmer(prevActive);
+      const unsubscribe = useGameStore.subscribe((state) => {
+        const active = state.combo.count >= SHIMMER_COMBO_THRESHOLD;
+        if (active !== prevActive) {
+          prevActive = active;
+          engine.setShimmer(active);
+        }
+      });
+      return unsubscribe;
+    }, [engine]);
+
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore auto-repeat (holding Space shouldn't hose the scene) and
       // anything typed into a form control.
@@ -120,6 +146,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
         handleEchoModeChange(modes[nextIndex]);
       } else if (key === 'l') {
         handleDivineLightToggle();
+      } else if (key === 'b') {
+        handleBinauralToggle();
       } else if (event.code === 'Space') {
         event.preventDefault();
         // Space always drops a marble, regardless of the selected module type.
@@ -248,9 +276,11 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
           isMuted={isMuted}
           echoMode={echoMode}
           divineLightActive={divineLightActive}
+          binauralActive={binauralActive}
           onMute={handleMute}
           onEchoModeChange={handleEchoModeChange}
           onDivineLightToggle={handleDivineLightToggle}
+          onBinauralToggle={handleBinauralToggle}
         />
 
         <ModuleSelector selectedNodeType={selectedNodeType} onSelect={handleModuleSelect} />

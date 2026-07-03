@@ -1,5 +1,5 @@
 import type * as Tone from 'tone';
-import type { InstrumentName, Voice } from './instruments';
+import type { InstrumentName, PitchContext, Voice } from './instruments';
 import {
   GLOBAL_VOICE_CAP,
   PER_INSTRUMENT_VOICE_CAP,
@@ -14,7 +14,7 @@ export interface VoiceBus {
   readonly reverbSend: Tone.Gain;
 }
 
-export type VoiceFactory = (name: InstrumentName) => Voice;
+export type VoiceFactory = (name: InstrumentName, pitch: PitchContext) => Voice;
 
 type Timer = ReturnType<typeof setTimeout>;
 
@@ -40,8 +40,8 @@ export class VoiceManager {
     this.factory = factory;
   }
 
-  play(name: InstrumentName, velocityGain: number): Voice {
-    const voice = this.factory(name);
+  play(name: InstrumentName, velocityGain: number, brightness: number, pitch: PitchContext): Voice {
+    const voice = this.factory(name, pitch);
 
     // Enforce caps by stealing the oldest voice before adding the new one.
     const perInstrument = this.active.get(name);
@@ -54,7 +54,7 @@ export class VoiceManager {
 
     voice.output.connect(this.bus.input);
     voice.output.connect(this.bus.reverbSend);
-    voice.trigger(velocityGain);
+    voice.trigger(velocityGain, brightness);
 
     this.liveVoices.add(voice);
     this.nameOf.set(voice, name);

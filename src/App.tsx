@@ -241,6 +241,7 @@ function App() {
                 M: Mute/Unmute<br/>
                 D: Cycle echo (off/short/long)<br/>
                 L: Divine light<br/>
+                B: Binaural mode<br/>
                 C: Clear all<br/>
                 H: Toggle help<br/>
                 ESC: Return to origin

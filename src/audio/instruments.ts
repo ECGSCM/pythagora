@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { BRIGHTNESS_CUTOFF_MUL_MIN, BRIGHTNESS_CUTOFF_MUL_MAX } from './constants';
 
 // Declarative instrument voices. Each factory reproduces the EXACT node recipe
 // of the matching play* method in the old audio module (same oscillator
@@ -20,14 +21,41 @@ export type InstrumentName =
   | 'seesaw'
   | 'impact';
 
+/**
+ * Pitch selection context supplied by the engine from the HarmonyEngine's
+ * current key (§2.2). `scaleFreq` reproduces the original random-pentatonic
+ * character but transposed to the current key; `keyRatio` is the raw
+ * transposition factor for instruments that pick from their own fixed scale
+ * (ramp). Superset of the design-doc type `{ scaleFreq }` — the extra
+ * `keyRatio` lets the ramp transpose without widening its octave spread.
+ */
+export interface PitchContext {
+  scaleFreq: (base: number) => number;
+  keyRatio: number;
+}
+
 export interface Voice {
   /** Per-voice output; the VoiceManager connects this to the bus + reverb send. */
   readonly output: Tone.Gain;
   /** Derived total lifetime in ms (attack+decay+duration+release, plus margin). */
   readonly lifetimeMs: number;
-  /** Start oscillators/envelopes; velocityGain (0..1) scales the output. */
-  trigger(velocityGain: number): void;
+  /**
+   * Start oscillators/envelopes. `velocityGain` (0..1) scales the output;
+   * `brightness` (0..1) scales any filter cutoff (§2.3) — soft hits sound
+   * darker, hard hits open up.
+   */
+  trigger(velocityGain: number, brightness: number): void;
   dispose(): void;
+}
+
+/** Linear interpolation. */
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Cutoff multiplier for a given brightness (§2.3), lerp(0.6, 1.6, b). */
+function brightnessCutoffMul(brightness: number): number {
+  return lerp(BRIGHTNESS_CUTOFF_MUL_MIN, BRIGHTNESS_CUTOFF_MUL_MAX, brightness);
 }
 
 /**
@@ -57,6 +85,18 @@ function randomScaleFreq(baseFreq: number): number {
   return baseFreq * randomRatio * randomOctave;
 }
 
+/**
+ * Build the per-collision pitch context for the current key (§2.2). Same
+ * pentatonic ratios/octave spread as before, transposed by `keyRatio` (the
+ * ratio of the current circle-of-fifths root to C4).
+ */
+export function makePitchContext(keyRatio: number): PitchContext {
+  return {
+    keyRatio,
+    scaleFreq: (base: number) => randomScaleFreq(base) * keyRatio,
+  };
+}
+
 type Disposable = { dispose(): void };
 
 function disposeAll(nodes: Disposable[]): void {
@@ -82,14 +122,15 @@ function stopAll(sources: Array<Tone.Oscillator | Tone.LFO>): void {
 // ==================== INSTRUMENTS ====================
 
 // bumper — DEEP TEMPLE BELL (audio.ts:1029 playDrumHit)
-function createBumper(): Voice {
+function createBumper(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const freq = randomScaleFreq(65.41); // C2 base
+  const freq = pitch.scaleFreq(65.41); // C2 base
   const osc1 = new Tone.Oscillator(freq, 'sine');
   const osc2 = new Tone.Oscillator(freq * 2.02, 'sine');
   const osc3 = new Tone.Oscillator(freq * 3.05, 'triangle');
   const gain = new Tone.Gain(0.6);
-  const filter = new Tone.Filter({ frequency: 800, type: 'lowpass', Q: 2 });
+  const filterHz = 800;
+  const filter = new Tone.Filter({ frequency: filterHz, type: 'lowpass', Q: 2 });
   const adsr = { attack: 0.01, decay: 1.0, sustain: 0.2, release: 1.5 };
   const env = new Tone.AmplitudeEnvelope(adsr);
 
@@ -104,8 +145,9 @@ function createBumper(): Voice {
   return {
     output,
     lifetimeMs: computeVoiceLifetimeMs(adsr, 2),
-    trigger(v) {
+    trigger(v, brightness) {
       output.gain.value = v;
+      filter.frequency.value = filterHz * brightnessCutoffMul(brightness);
       for (const o of oscs) o.start();
       env.triggerAttackRelease('2s');
     },
@@ -117,12 +159,13 @@ function createBumper(): Voice {
 }
 
 // chime — HEAVENLY HARP (audio.ts:1091 playChimeHit)
-function createChime(): Voice {
+function createChime(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const freq = randomScaleFreq(523.25); // C5 base
+  const freq = pitch.scaleFreq(523.25); // C5 base
   const frequencies = [freq, freq * 2.5, freq * 5.1, freq * 8.2, freq * 12.5];
   const masterGain = new Tone.Gain(0.5);
-  const filter = new Tone.Filter({ frequency: 12000, type: 'highpass', Q: 0.5 });
+  const filterHz = 12000;
+  const filter = new Tone.Filter({ frequency: filterHz, type: 'highpass', Q: 0.5 });
   const adsr = { attack: 0.05, decay: 1.5, sustain: 0.2, release: 2.5 };
   const env = new Tone.AmplitudeEnvelope(adsr);
 
@@ -144,8 +187,9 @@ function createChime(): Voice {
   return {
     output,
     lifetimeMs: computeVoiceLifetimeMs(adsr, 3),
-    trigger(v) {
+    trigger(v, brightness) {
       output.gain.value = v;
+      filter.frequency.value = filterHz * brightnessCutoffMul(brightness);
       for (const o of oscs) o.start();
       env.triggerAttackRelease('3s');
     },
@@ -157,9 +201,9 @@ function createChime(): Voice {
 }
 
 // bell — CRYSTAL PURE TONE (audio.ts:1157 playBellHit)
-function createBell(): Voice {
+function createBell(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const freq = randomScaleFreq(880); // A5 base
+  const freq = pitch.scaleFreq(880); // A5 base
   const osc = new Tone.Oscillator(freq, 'sine');
   const filter = new Tone.Filter({ frequency: freq * 1.5, type: 'bandpass', Q: 20 });
   const lfo = new Tone.LFO({ frequency: randomFreq(0.05, 0.2), min: freq * 0.8, max: freq * 2, type: 'sine' });
@@ -176,6 +220,8 @@ function createBell(): Voice {
   return {
     output,
     lifetimeMs: computeVoiceLifetimeMs(adsr, 4),
+    // Bell's bandpass cutoff is already swept by its own LFO, so brightness is
+    // intentionally not applied here (would fight the sweep). §2.3.
     trigger(v) {
       output.gain.value = v;
       lfo.start();
@@ -190,9 +236,9 @@ function createBell(): Voice {
 }
 
 // spinner — COSMIC CHORD (audio.ts:1222 playSpinnerHit)
-function createSpinner(): Voice {
+function createSpinner(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const baseFreq = randomScaleFreq(261.63); // C4 base
+  const baseFreq = pitch.scaleFreq(261.63); // C4 base
   const chordIntervals = [1, 1.25, 1.5, 2];
   const notes = chordIntervals.map((interval) => baseFreq * interval);
 
@@ -202,17 +248,20 @@ function createSpinner(): Voice {
   const masterGain = new Tone.Gain(0.3);
 
   const oscs: Tone.Oscillator[] = [];
+  const filters: { filter: Tone.Filter; baseHz: number }[] = [];
   const disposables: Disposable[] = [chorus, env, masterGain, output];
   notes.forEach((freq, i) => {
     const fundamental = new Tone.Oscillator(freq, 'sine');
     const harmonic = new Tone.Oscillator(freq * 2.01, 'triangle');
     const noteGain = new Tone.Gain(0.2);
-    const filter = new Tone.Filter({ frequency: 3000 + i * 500, type: 'lowpass', Q: 1 });
+    const filterHz = 3000 + i * 500;
+    const filter = new Tone.Filter({ frequency: filterHz, type: 'lowpass', Q: 1 });
     fundamental.connect(filter);
     harmonic.connect(filter);
     filter.connect(noteGain); // preserved dead-end from the original recipe
     filter.connect(chorus);
     oscs.push(fundamental, harmonic);
+    filters.push({ filter, baseHz: filterHz });
     disposables.push(fundamental, harmonic, noteGain, filter);
   });
 
@@ -223,8 +272,10 @@ function createSpinner(): Voice {
   return {
     output,
     lifetimeMs: computeVoiceLifetimeMs(adsr, 3),
-    trigger(v) {
+    trigger(v, brightness) {
       output.gain.value = v;
+      const mul = brightnessCutoffMul(brightness);
+      for (const { filter, baseHz } of filters) filter.frequency.value = baseHz * mul;
       chorus.start();
       for (const o of oscs) o.start();
       env.triggerAttackRelease('3s');
@@ -237,10 +288,13 @@ function createSpinner(): Voice {
 }
 
 // ramp — SUIKINKUTSU water harp (audio.ts:1304 playRampSlide)
-function createRamp(): Voice {
+function createRamp(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
   const pentatonicScale = [130.81, 146.83, 164.81, 196.0, 220.0, 261.63];
-  const baseFreq = pentatonicScale[Math.floor(Math.random() * pentatonicScale.length)];
+  // Ramp keeps its own tight low-octave scale (character), transposed to the
+  // current key by the raw keyRatio rather than scaleFreq's wide octave spread.
+  const baseFreq =
+    pentatonicScale[Math.floor(Math.random() * pentatonicScale.length)] * pitch.keyRatio;
 
   const osc = new Tone.Oscillator(baseFreq, 'sine');
   const metalOsc1 = new Tone.Oscillator(baseFreq * 2.002, 'sine');
@@ -263,7 +317,8 @@ function createRamp(): Voice {
   const targetFreq = baseFreq * 0.98;
   pitchSlide.connect(osc.frequency);
 
-  const filter = new Tone.Filter({ frequency: 2000, type: 'lowpass', Q: 0.5 });
+  const filterHz = 2000;
+  const filter = new Tone.Filter({ frequency: filterHz, type: 'lowpass', Q: 0.5 });
   const mainGain = new Tone.Gain(0.5);
   const metalGain1 = new Tone.Gain(0.15);
   const metalGain2 = new Tone.Gain(0.08);
@@ -295,8 +350,9 @@ function createRamp(): Voice {
   return {
     output,
     lifetimeMs,
-    trigger(v) {
+    trigger(v, brightness) {
       output.gain.value = v;
+      filter.frequency.value = filterHz * brightnessCutoffMul(brightness);
       for (const o of oscs) o.start();
       const now = Tone.now();
       mainEnv.triggerAttackRelease('3.5s', now);
@@ -318,9 +374,9 @@ function createRamp(): Voice {
 // funnel — SPIRALING ARPEGGIO (audio.ts:1455 playSpiralEffect)
 // A6/A7: the original had NO envelope and was hard-cut after 2s. It now gets a
 // swirl-preserving amplitude envelope so the oscillators/pan/delay fade out.
-function createFunnel(): Voice {
+function createFunnel(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const baseFreq = randomScaleFreq(440); // A4 base
+  const baseFreq = pitch.scaleFreq(440); // A4 base
   const ratios = [1, 1.5, 2];
   const masterGain = new Tone.Gain(0.35);
   const adsr = { attack: 0.05, decay: 0.6, sustain: 0.3, release: 0.8 };
@@ -361,15 +417,16 @@ function createFunnel(): Voice {
 }
 
 // seesaw — PLAYFUL XYLOPHONE (audio.ts:1510 playSeesawTilt)
-function createSeesaw(): Voice {
+function createSeesaw(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const baseFreq = randomScaleFreq(392); // G4 base
+  const baseFreq = pitch.scaleFreq(392); // G4 base
   const osc1 = new Tone.Oscillator(baseFreq, 'sine');
   const osc2 = new Tone.Oscillator(baseFreq * 3, 'sine');
   const osc3 = new Tone.Oscillator(baseFreq * 5, 'triangle');
   const adsr = { attack: 0.001, decay: 0.5, sustain: 0.05, release: 0.8 };
   const env = new Tone.AmplitudeEnvelope(adsr);
-  const filter = new Tone.Filter({ frequency: 5000, type: 'highpass', Q: 2 });
+  const filterHz = 5000;
+  const filter = new Tone.Filter({ frequency: filterHz, type: 'highpass', Q: 2 });
   const gain = new Tone.Gain(0.5);
 
   osc1.connect(filter);
@@ -383,8 +440,9 @@ function createSeesaw(): Voice {
   return {
     output,
     lifetimeMs: computeVoiceLifetimeMs(adsr, 1),
-    trigger(v) {
+    trigger(v, brightness) {
       output.gain.value = v;
+      filter.frequency.value = filterHz * brightnessCutoffMul(brightness);
       for (const o of oscs) o.start();
       env.triggerAttackRelease('1s');
     },
@@ -396,9 +454,9 @@ function createSeesaw(): Voice {
 }
 
 // impact — the old default collision sound (audio.ts:1573 playDefaultCollision)
-function createImpact(): Voice {
+function createImpact(pitch: PitchContext): Voice {
   const output = new Tone.Gain(1);
-  const freq = randomScaleFreq(528); // C5 base
+  const freq = pitch.scaleFreq(528); // C5 base
   const synth = new Tone.Synth({
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.05, decay: 0.3, sustain: 0.2, release: 0.5 },
@@ -418,7 +476,7 @@ function createImpact(): Voice {
   };
 }
 
-const FACTORIES: Record<InstrumentName, () => Voice> = {
+const FACTORIES: Record<InstrumentName, (pitch: PitchContext) => Voice> = {
   bumper: createBumper,
   chime: createChime,
   bell: createBell,
@@ -429,7 +487,7 @@ const FACTORIES: Record<InstrumentName, () => Voice> = {
   impact: createImpact,
 };
 
-/** Create a fresh, un-triggered voice for the named instrument. */
-export function createVoice(name: InstrumentName): Voice {
-  return FACTORIES[name]();
+/** Create a fresh, un-triggered voice for the named instrument in the given key. */
+export function createVoice(name: InstrumentName, pitch: PitchContext): Voice {
+  return FACTORIES[name](pitch);
 }

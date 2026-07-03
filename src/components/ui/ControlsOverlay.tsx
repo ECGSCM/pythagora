@@ -6,9 +6,11 @@ interface ControlsOverlayProps {
   isMuted: boolean;
   echoMode: EchoMode;
   divineLightActive: boolean;
+  binauralActive: boolean;
   onMute: () => void;
   onEchoModeChange: (mode: EchoMode) => void;
   onDivineLightToggle: () => void;
+  onBinauralToggle: () => void;
 }
 
 // Floating audio-control toolbar (mute / echo / divine light). Pure MUI, styled
@@ -17,9 +19,11 @@ export function ControlsOverlay({
   isMuted,
   echoMode,
   divineLightActive,
+  binauralActive,
   onMute,
   onEchoModeChange,
   onDivineLightToggle,
+  onBinauralToggle,
 }: ControlsOverlayProps) {
   return (
     <MUIBox
@@ -146,6 +150,27 @@ export function ControlsOverlay({
             aria-label={divineLightActive ? 'Disable divine light' : 'Enable divine light'}
           >
             <MUIBox sx={{ fontSize: { xs: 20, sm: 24 }, fontWeight: 'bold' }}>✦</MUIBox>
+          </IconButton>
+        </Tooltip>
+
+        {/* Binaural Drift Control */}
+        <Tooltip title="Binaural drift (headphones) (Press B)">
+          <IconButton
+            onClick={onBinauralToggle}
+            sx={{
+              background: binauralActive ? '#0A0A0A' : '#000000',
+              border: binauralActive ? '1px solid #FFFFFF' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF',
+              },
+            }}
+            aria-label={binauralActive ? 'Disable binaural drift' : 'Enable binaural drift'}
+          >
+            <MUIBox sx={{ fontSize: { xs: 16, sm: 20 } }}>◐</MUIBox>
           </IconButton>
         </Tooltip>
       </MUIBox>

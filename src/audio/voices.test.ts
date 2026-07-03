@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type * as Tone from 'tone';
 import { VoiceManager, type VoiceBus, type VoiceFactory } from './voices';
-import type { Voice } from './instruments';
+import type { PitchContext, Voice } from './instruments';
 import { GLOBAL_VOICE_CAP, PER_INSTRUMENT_VOICE_CAP } from './constants';
+
+// Stub pitch context — the manager just threads it to the factory.
+const PITCH: PitchContext = { scaleFreq: (b) => b, keyRatio: 1 };
 
 // These specs use injected fake voices + fake timers, so no real Tone.js is
 // loaded — the accounting/stealing/cleanup logic (A9/A10) is exercised purely.
@@ -48,7 +51,7 @@ describe('VoiceManager', () => {
     const { factory, created } = makeFactory();
     const vm = new VoiceManager(makeFakeBus(), factory);
 
-    for (let i = 0; i < PER_INSTRUMENT_VOICE_CAP + 2; i++) vm.play('bumper', 1);
+    for (let i = 0; i < PER_INSTRUMENT_VOICE_CAP + 2; i++) vm.play('bumper', 1, 1, PITCH);
 
     expect(vm.activeCount('bumper')).toBe(PER_INSTRUMENT_VOICE_CAP);
     // The two oldest were stolen and dispose after their short fade.
@@ -61,8 +64,8 @@ describe('VoiceManager', () => {
     const { factory, created } = makeFactory();
     const vm = new VoiceManager(makeFakeBus(), factory);
 
-    for (let i = 0; i < PER_INSTRUMENT_VOICE_CAP; i++) vm.play('chime', 1);
-    vm.play('chime', 1); // exceeds cap -> steal created[0]
+    for (let i = 0; i < PER_INSTRUMENT_VOICE_CAP; i++) vm.play('chime', 1, 1, PITCH);
+    vm.play('chime', 1, 1, PITCH); // exceeds cap -> steal created[0]
 
     vi.advanceTimersByTime(50);
     expect(created[0].disposed).toBe(true);
@@ -86,7 +89,7 @@ describe('VoiceManager', () => {
     // Round-robin so no single instrument reaches its own cap first; only the
     // global cap can bind.
     for (let i = 0; i < GLOBAL_VOICE_CAP + 3; i++) {
-      vm.play(names[i % names.length], 1);
+      vm.play(names[i % names.length], 1, 1, PITCH);
     }
 
     expect(vm.activeCount()).toBe(GLOBAL_VOICE_CAP);
@@ -96,7 +99,7 @@ describe('VoiceManager', () => {
     const { factory, created } = makeFactory(500);
     const vm = new VoiceManager(makeFakeBus(), factory);
 
-    vm.play('bell', 1);
+    vm.play('bell', 1, 1, PITCH);
     expect(vm.activeCount('bell')).toBe(1);
 
     vi.advanceTimersByTime(500); // lifetime fires: accounting drops immediately
@@ -110,7 +113,7 @@ describe('VoiceManager', () => {
     const { factory, created } = makeFactory();
     const vm = new VoiceManager(makeFakeBus(), factory);
 
-    for (let i = 0; i < 3; i++) vm.play('impact', 1);
+    for (let i = 0; i < 3; i++) vm.play('impact', 1, 1, PITCH);
     vm.dispose();
 
     expect(created.every((v) => v.disposed)).toBe(true);
