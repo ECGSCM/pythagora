@@ -12,7 +12,8 @@ import {
   Plane
 } from '@react-three/drei';
 import { Physics, useSphere, useBox, useCylinder, useCompoundBody, usePlane, useHingeConstraint } from '@react-three/cannon';
-import { SynthBridge3D, type Collision3DEvent } from '../engines/synthBridge3D';
+import { AudioEngine } from '../audio/engine';
+import { CollisionEvent } from '../types/events';
 import { PatchNode } from '../types/patch';
 import { Box as MUIBox, IconButton, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
@@ -20,7 +21,7 @@ import * as THREE from 'three';
 // Shared module/geometry types used throughout this file.
 type Vec3 = [number, number, number];
 type ModuleParams = PatchNode['params'];
-type CollisionHandler = (event: Collision3DEvent) => void;
+type CollisionHandler = (event: CollisionEvent) => void;
 
 interface SessionStats {
   totalCollisions: number;
@@ -506,7 +507,7 @@ const Marble = React.memo(({ id, position, onCollide, onSettle, unlocks }: Marbl
       if (nodeId) {
         // cannon-es reports contactPoint as an [x, y, z] tuple.
         const cp = e.contact?.contactPoint as number[] | undefined;
-        const collisionEvent: Collision3DEvent = {
+        const collisionEvent: CollisionEvent = {
           nodeId,
           velocity: Math.abs(e.contact?.impactVelocity ?? 5),
           position: cp ? { x: cp[0], y: cp[1], z: cp[2] } : { x: 0, y: 0, z: 0 },
@@ -1027,7 +1028,7 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
   const MIN_IMPACT_VELOCITY = 1.2;
 
   // Handle collisions and create ripple effects
-  const handleCollision = (event: Collision3DEvent) => {
+  const handleCollision = (event: CollisionEvent) => {
     if (event.velocity < MIN_IMPACT_VELOCITY) return;
     const lastHit = collisionGateRef.current.get(event.nodeId) ?? 0;
     if (event.timestamp - lastHit < COLLISION_COOLDOWN_MS) return;
@@ -1402,7 +1403,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   onToggleHelp,
   onExit
 }) => {
-  const [synthBridge, setSynthBridge] = useState<SynthBridge3D | null>(null);
+  const [engine, setEngine] = useState<AudioEngine | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [echoMode, setEchoMode] = useState<'off' | 'short' | 'long'>('off');
   const [divineLightActive, setDivineLightActive] = useState(false);
@@ -1423,54 +1424,53 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   const [marbleDropTrigger, setMarbleDropTrigger] = useState(0);
 
   useEffect(() => {
-    // Track the bridge in a local so cleanup disposes the instance this
-    // effect actually created (the old cleanup read the `synthBridge` state
-    // from the mount render — always null — so dispose() was unreachable
-    // and the whole audio engine leaked on remount; REFACTORING_PLAN.md A1).
-    let bridge: SynthBridge3D | null = null;
+    // Track the engine in a local so cleanup disposes the instance this effect
+    // actually created (the old cleanup read the state from the mount render —
+    // always null — so dispose() was unreachable and the whole audio engine
+    // leaked on remount; REFACTORING_PLAN.md A1). Construction is synchronous
+    // and needs no user gesture, so readiness is gated on construction, not on
+    // Tone.start() (which can only succeed after a gesture). The engine kicks
+    // its own resume on the first collision, so audio comes up on interaction.
+    let engineInstance: AudioEngine | null = null;
     let cancelled = false;
 
-    const initializeBridge = async () => {
+    // Construct off the effect body (microtask) so readiness/error state aren't
+    // synchronous setState calls inside the effect. Construction is synchronous
+    // and needs no user gesture, so readiness is gated on construction, not on
+    // Tone.start() (which can only succeed after a gesture). The engine kicks
+    // its own resume on the first collision, so audio comes up on interaction.
+    queueMicrotask(() => {
+      if (cancelled) return;
       try {
-        // No onCollision in the bridge config: the Scene-level handler is the
-        // single dispatch point for collision events. Wiring it here as well
-        // made every collision fire the App callback twice (A5).
-        bridge = new SynthBridge3D();
-        await bridge.initialize();
-        if (cancelled) {
-          bridge.dispose();
-          return;
-        }
-        setSynthBridge(bridge);
+        engineInstance = new AudioEngine();
+        // Best-effort early start; resolves regardless of gesture state and
+        // never rejects, so it can't block readiness (A11).
+        void engineInstance.resume();
+        setEngine(engineInstance);
         setIsInitialized(true);
       } catch (error) {
-        if (!cancelled) {
-          setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
-        }
+        setInitError(error instanceof Error ? error.message : 'Failed to initialize audio system');
       }
-    };
-
-    initializeBridge();
+    });
 
     return () => {
       cancelled = true;
-      bridge?.dispose();
-      setSynthBridge(null);
+      engineInstance?.dispose();
+      setEngine(null);
     };
   }, []);
 
   const handleMute = () => {
-    setIsMuted(!isMuted);
-    if (synthBridge) {
-      synthBridge.setMasterVolume(isMuted ? -12 : -Infinity);
-    }
+    const next = !isMuted;
+    setIsMuted(next);
+    // True mute via Tone.Destination; the -12dB master volume is left intact
+    // (REFACTORING_PLAN.md A3/A4).
+    engine?.setMuted(next);
   };
 
   const handleEchoModeChange = (mode: 'off' | 'short' | 'long') => {
     setEchoMode(mode);
-    if (synthBridge) {
-      synthBridge.setEchoMode(mode);
-    }
+    engine?.setEchoMode(mode);
   };
 
   const handleModuleSelect = (moduleType: PatchNode['type']) => {
@@ -1570,9 +1570,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             <Scene
               nodes={nodes}
               onCollision={(event) => {
-                if (synthBridge) {
-                  synthBridge.triggerCollision(event);
-                }
+                // The engine resumes its own context internally on first hit.
+                engine?.triggerCollision(event);
                 onCollision?.(event);
               }}
               selectedNodeType={selectedNodeType}
