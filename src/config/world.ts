@@ -14,6 +14,10 @@ export type Vec3 = [number, number, number];
 /** Cylinder geometry args: [radiusTop, radiusBottom, height, radialSegments]. */
 export type CylinderArgs = [number, number, number, number];
 
+// The Phase 5B visual-layer tuning (palette, post-processing, aurora, starfield,
+// reward glyphs) lives in ./experience.ts to keep this file focused on physics
+// and geometry.
+
 // ==================== PHYSICS (world) ====================
 
 export const PHYSICS = {
@@ -46,19 +50,45 @@ export const MARBLE = {
   spawnClickMinY: 0.5, // click-spawned marbles never spawn below this
   spawnSpreadX: 10, // Space-drop horizontal spread: (rand-0.5) * spread
 
-  // Appearance (base vs. goldenMarble unlock).
+  // Appearance (base vs. goldenMarble unlock). Under bloom the marble reads as a
+  // light-orb / comet, so emissive is a constant ~1.2 and the per-marble
+  // pointLight is gone (bloom replaces it — §3.2).
   colorBase: '#8A8A8A',
-  colorGolden: '#E0E0E0',
+  colorGolden: '#D4AF37',
   metalness: 0.9,
   roughnessBase: 0.1,
   roughnessGolden: 0.05,
-  emissiveIntensityBase: 0.2,
-  emissiveIntensityGolden: 0.4,
-  glowIntensityBase: 0.5,
-  glowIntensityGolden: 0.8,
-  glowDistance: 2,
-  glowDecay: 2,
+  emissiveBase: '#E8E6E0', // moonlight glow
+  emissiveGolden: '#D4AF37', // gold glow keeps golden marble distinct
+  // ~0.9 blooms as a light-orb without going nuclear when several overlap near
+  // the spawn cluster (§3.2 tuning).
+  emissiveIntensityBase: 0.9,
+  emissiveIntensityGolden: 0.9,
+
+  // Settle = ascension (§3.2): a 1s fade (scale down, emissive up then out)
+  // plus a few points drifting upward before the marble is removed.
+  settleFadeSec: 1.0,
+  settleEmissivePeak: 2.6,
+  ascensionCount: 8,
+  ascensionRisePerSec: 3.0,
+
+  // Comet trail colors (moonlight normally, gold once golden marble unlocks).
+  trailColor: '#E8E6E0',
+  trailColorGolden: '#D4AF37',
 } as const;
+
+// Fixed unit XZ offsets for the ascension motes (deterministic — no Math.random
+// in render, which would teleport them each frame / trip the hooks lint).
+export const ASCENSION_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0.12, 0.0],
+  [-0.1, 0.08],
+  [0.06, -0.12],
+  [-0.08, -0.09],
+  [0.14, 0.05],
+  [-0.13, 0.03],
+  [0.02, 0.13],
+  [0.0, -0.14],
+];
 
 // ==================== MODULES ====================
 
@@ -75,7 +105,7 @@ export const MODULES = {
     args: [1.2, 1.2, 0.6] as Vec3,
     material: { restitution: 0.9, friction: 0.2 },
     baseColor: '#3A3A3A',
-    flashColor: '#FFFFFF',
+    flashColor: '#E8E6E0', // moonlight (subtle swap, not pure white)
     flashDurationMs: 200,
     metalness: 0.8,
     roughness: 0.2,
@@ -83,7 +113,7 @@ export const MODULES = {
   chime: {
     args: [0.15, 0.15, 3] as Vec3,
     baseColor: '#4A4A4A',
-    flashColor: '#E0E0E0',
+    flashColor: '#E8E6E0', // moonlight
     flashDurationMs: 500,
     metalness: 0.9,
     roughness: 0.1,
@@ -121,18 +151,36 @@ export const MODULES = {
   bell: {
     args: [1, 1.5, 2] as Vec3,
     baseColor: '#7A7A7A',
-    flashColor: '#D0D0D0',
+    flashColor: '#E8E6E0', // moonlight
     flashDurationMs: 1000,
     metalness: 0.9,
     roughness: 0.1,
   },
 } as const;
 
-// Hit-flash emissive intensities shared by useHitFlash (bumper/chime/bell).
+// Hit = light (§3.1/§3.4). A hit spikes emissiveIntensity to a bloom-blowing
+// peak and decays exponentially (same shape as the sound's tail) back down into
+// the resting breath. The color swap is kept subtle (moonlight, not white).
 export const HIT_FLASH = {
-  emissiveActive: 0.35,
-  emissiveIdle: 0.1,
+  emissivePeak: 2.5,
+  // Exponential time constant (ms): the spike is ~e^-3 (≈5%) after ~3τ, so a
+  // ~100ms τ reads as a ~300ms glow.
+  emissiveDecayMs: 100,
 } as const;
+
+// Shared breathing clock (§3.3): every resting emissive oscillates between
+// these bounds on a 5s sine, phase-shifted per module position so the pulse
+// travels across the field.
+export const BREATH = {
+  periodSec: 5,
+  emissiveMin: 0.06,
+  emissiveMax: 0.14,
+} as const;
+
+/** Breath phase offset derived from a module's world position (§3.3). */
+export function breathPhaseFromPosition(pos: Vec3): number {
+  return pos[0] * 0.3 + pos[1] * 0.2;
+}
 
 // ==================== GAMEPLAY ====================
 
@@ -159,10 +207,12 @@ export const GAMEPLAY = {
   unlockDisplayHideMs: 2000, // unlock color-dimension flash
   celebrationHideMs: 2000, // completion celebration
 
-  // Ripple color palettes.
-  rippleStandardColors: ['#FF4757', '#FFA502', '#FFDD59', '#00D2D3', '#5F27CD'],
-  rippleRainbowColors: ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'],
-  rippleGoldenColor: '#FFD700',
+  // Ripple color ladder, aligned to the four-color palette (§1.2): moonlight
+  // for ordinary hits, turquoise as the combo warms up, gold at the apex. The
+  // old red/orange/rainbow ripples read as noise inside Divine Monochrome.
+  rippleStandardColors: ['#E8E6E0', '#E8E6E0', '#00BFA6', '#00BFA6', '#D4AF37'],
+  rippleRainbowColors: ['#E8E6E0', '#00BFA6', '#E8E6E0', '#00BFA6', '#E8E6E0', '#00BFA6', '#D4AF37'],
+  rippleGoldenColor: '#D4AF37',
 } as const;
 
 /** combo count -> score multiplier (mirrors the old calculateMultiplier). */
@@ -216,22 +266,25 @@ export interface PointLightDef {
   distance: number;
 }
 
+// Rebalanced for the bloom pipeline (§3.1): the pre-bloom values (spot 20 /
+// points 8 / ambient 3) blew the whole frame to white once the composer added
+// emissive bloom. These read as "sacred shafts" through the composer.
 export const DIVINE_LIGHT = {
   spotlight: {
     position: [0, 30, 0] as Vec3,
     angle: 1.5,
     penumbra: 0.2,
-    intensity: 20.0,
+    intensity: 5.0,
     color: '#FFD700', // golden
   },
   pointLights: [
-    { position: [-12, 25, -12], color: '#FF6B6B', intensity: 8.0, distance: 80 }, // divine red
-    { position: [12, 25, 12], color: '#4ECDC4', intensity: 8.0, distance: 80 }, // divine cyan
-    { position: [-12, 25, 12], color: '#A855F7', intensity: 8.0, distance: 80 }, // divine purple
-    { position: [12, 25, -12], color: '#F472B6', intensity: 8.0, distance: 80 }, // divine pink
-    { position: [0, 20, 0], color: '#FFD700', intensity: 5.0, distance: 60 }, // center golden fill
+    { position: [-12, 25, -12], color: '#FF6B6B', intensity: 2.0, distance: 80 }, // divine red
+    { position: [12, 25, 12], color: '#4ECDC4', intensity: 2.0, distance: 80 }, // divine cyan
+    { position: [-12, 25, 12], color: '#A855F7', intensity: 2.0, distance: 80 }, // divine purple
+    { position: [12, 25, -12], color: '#F472B6', intensity: 2.0, distance: 80 }, // divine pink
+    { position: [0, 20, 0], color: '#FFD700', intensity: 1.2, distance: 60 }, // center golden fill
   ] as PointLightDef[],
-  ambient: { intensity: 3.0, color: '#FFD700' },
+  ambient: { intensity: 0.7, color: '#FFD700' },
 } as const;
 
 // ==================== GROUND / SHADOWS ====================
@@ -264,22 +317,6 @@ export const CONTACT_SHADOWS = {
   width: 1024,
   height: 1024,
   resolution: 512,
-} as const;
-
-// ==================== ATMOSPHERE ====================
-
-export const ATMOSPHERE_PARTICLE_POSITIONS: Vec3[] = [
-  [-9, 8, -12],
-  [11, 14, 6],
-  [-4, 17, 9],
-  [7, 6, -8],
-];
-
-export const ATMOSPHERE_PARTICLE = {
-  radius: 0.02,
-  color: '#00BFA6',
-  emissiveIntensity: 0.5,
-  opacity: 0.6,
 } as const;
 
 // ==================== APP: MODULE DEFAULTS + DEMO LAYOUT ====================

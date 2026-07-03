@@ -11,3 +11,5 @@ export { CompletionCelebration } from './CompletionCelebration';
 export { PerfectRunIndicator } from './PerfectRunIndicator';
 export { CameraFlow } from './CameraFlow';
 export { ParticleTrail } from './ParticleTrail';
+export { PostFX } from './PostFX';
+export { AuroraPulse } from './AuroraPulse';

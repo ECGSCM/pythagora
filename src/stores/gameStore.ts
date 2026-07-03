@@ -50,6 +50,13 @@ export interface CompletionCelebrationState {
   marblesCompleted: number;
 }
 
+/** The harmony key change that drives the Aurora pulse (§3.4). */
+export interface ModulationState {
+  index: number;
+  name: string;
+  at: number; // Date.now() when the key stepped
+}
+
 interface GameState {
   combo: ComboState;
   comboDisplay: ComboDisplayState;
@@ -57,11 +64,15 @@ interface GameState {
   sessionStats: SessionStats;
   perfectRun: PerfectRunState;
   completionCelebration: CompletionCelebrationState;
+  /** Most recent harmony modulation (null until the first key step). */
+  modulation: ModulationState | null;
   /** Timestamp of the most recent marble hit per module id — drives hit flash. */
   moduleHits: Record<string, number>;
 
   /** Port of Scene.handleCollision's combo/unlock/stats/perfect-run update. */
   registerCollision: (event: CollisionEvent) => void;
+  /** The harmony key stepped — fire the Aurora pulse. */
+  setModulation: (index: number, name: string) => void;
   /** A marble finished its run: bump the completion celebration. */
   marbleCompleted: () => void;
   /** The celebration animation finished (or was dismissed). */
@@ -105,7 +116,12 @@ export const useGameStore = create<GameState>((set, get) => {
     sessionStats: initialStats(),
     perfectRun: initialPerfectRun(),
     completionCelebration: initialCelebration(),
+    modulation: null,
     moduleHits: {},
+
+    setModulation: (index, name) => {
+      set({ modulation: { index, name, at: Date.now() } });
+    },
 
     registerCollision: (event) => {
       const { combo, unlocks, sessionStats, perfectRun, moduleHits } = get();
@@ -225,6 +241,7 @@ export const useGameStore = create<GameState>((set, get) => {
         sessionStats: initialStats(),
         perfectRun: initialPerfectRun(),
         completionCelebration: initialCelebration(),
+        modulation: null,
         moduleHits: {},
       });
     },

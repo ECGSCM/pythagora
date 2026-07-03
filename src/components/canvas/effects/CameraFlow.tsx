@@ -1,40 +1,34 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { MarbleState } from '../types';
+import { newestMarblePosition } from '../marblePositions';
 
-// Smooth camera follow with gentle floating motion. Takes the live marble
-// list as a prop (Phase 5 wires it up); not yet mounted.
-export const CameraFlow = React.memo(({ marbles }: { marbles: MarbleState[] }) => {
+// Smooth camera follow with gentle breathing float (§3.5). Tracks the newest
+// marble's LIVE position from the shared registry (no React state / no per-frame
+// allocation — the scratch vectors are reused). Default OFF; the shell toggles
+// `enabled` (Follow / F) and disables OrbitControls while it's on so they don't
+// fight over the camera.
+export const CameraFlow = React.memo(({ enabled }: { enabled: boolean }) => {
   const { camera } = useThree();
-  const [offset] = useState(new THREE.Vector3(0, 8, 12)); // camera offset from target
+  const offset = useMemo(() => new THREE.Vector3(0, 8, 12), []);
+  const floatOffset = useMemo(() => new THREE.Vector3(), []);
+  const target = useMemo(() => new THREE.Vector3(), []);
+  const lookAt = useMemo(() => new THREE.Vector3(), []);
 
   useFrame((state, delta) => {
-    if (!camera || marbles.length === 0) return;
+    if (!enabled) return;
+    const pos = newestMarblePosition();
+    if (!pos) return;
 
-    // Follow the most recently added marble.
-    const activeMarble = marbles[marbles.length - 1];
-    if (!activeMarble) return;
+    const t = state.clock.elapsedTime;
+    floatOffset.set(Math.sin(t * 0.3) * 2, Math.cos(t * 0.2) * 1, Math.sin(t * 0.25) * 2);
 
-    const marblePos = new THREE.Vector3(
-      activeMarble.position[0],
-      activeMarble.position[1],
-      activeMarble.position[2],
-    );
+    target.copy(pos).add(offset).add(floatOffset);
+    camera.position.lerp(target, Math.min(1, 2 * delta));
 
-    // Gentle floating motion (sine wave).
-    const time = state.clock.elapsedTime;
-    const floatOffset = new THREE.Vector3(
-      Math.sin(time * 0.3) * 2,
-      Math.cos(time * 0.2) * 1,
-      Math.sin(time * 0.25) * 2,
-    );
-
-    const target = marblePos.clone().add(offset).add(floatOffset);
-    camera.position.lerp(target, 2 * delta);
-
-    const lookAtTarget = marblePos.clone().add(new THREE.Vector3(0, 2, 0));
-    camera.lookAt(lookAtTarget);
+    lookAt.copy(pos);
+    lookAt.y += 2;
+    camera.lookAt(lookAt);
   });
 
   return null; // manipulates the camera directly

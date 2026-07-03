@@ -242,6 +242,7 @@ function App() {
                 D: Cycle echo (off/short/long)<br/>
                 L: Divine light<br/>
                 B: Binaural mode<br/>
+                F: Follow camera<br/>
                 C: Clear all<br/>
                 H: Toggle help<br/>
                 ESC: Return to origin

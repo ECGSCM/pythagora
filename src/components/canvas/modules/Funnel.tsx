@@ -2,7 +2,8 @@ import React from 'react';
 import { Cylinder } from '@react-three/drei';
 import { useCylinder } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES } from '../../../config/world';
+import { MODULES, breathPhaseFromPosition } from '../../../config/world';
+import { useEmissiveBreath } from '../hooks';
 import { SceneLabel } from '../SceneLabel';
 import type { StaticModuleProps } from '../types';
 
@@ -16,10 +17,13 @@ export const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
     userData: { nodeId },
   }));
 
+  const matRef = useEmissiveBreath(breathPhaseFromPosition(position));
+
   return (
     <group ref={ref}>
       <Cylinder args={cfg.args}>
         <meshStandardMaterial
+          ref={matRef}
           color={cfg.color}
           metalness={cfg.metalness}
           roughness={cfg.roughness}

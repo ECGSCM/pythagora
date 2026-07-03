@@ -2,7 +2,7 @@ import React from 'react';
 import { Cylinder } from '@react-three/drei';
 import { useCylinder } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES } from '../../../config/world';
+import { MODULES, breathPhaseFromPosition } from '../../../config/world';
 import { useHitFlash } from '../hooks';
 import { SceneLabel } from '../SceneLabel';
 import type { StaticModuleProps } from '../types';
@@ -18,7 +18,13 @@ export const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProp
     userData: { nodeId },
   }));
 
-  const matRef = useHitFlash(nodeId, cfg.baseColor, cfg.flashColor, cfg.flashDurationMs);
+  const matRef = useHitFlash(
+    nodeId,
+    cfg.baseColor,
+    cfg.flashColor,
+    cfg.flashDurationMs,
+    breathPhaseFromPosition(position),
+  );
 
   return (
     <group ref={ref}>

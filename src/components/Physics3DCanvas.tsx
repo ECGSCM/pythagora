@@ -47,6 +47,9 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
     const [echoMode, setEchoMode] = useState<EchoMode>('off');
     const [divineLightActive, setDivineLightActive] = useState(false);
     const [binauralActive, setBinauralActive] = useState(false);
+    // Follow camera (§3.5). Local shell state (mirrors divineLight/binaural),
+    // passed down to Scene; OrbitControls is disabled while it's on.
+    const [followCamera, setFollowCamera] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const [initError, setInitError] = useState<string | null>(null);
 
@@ -112,6 +115,20 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
       engine?.setBinaural(next);
     };
 
+    const handleFollowToggle = () => {
+      setFollowCamera((prev) => !prev);
+    };
+
+    // Aurora pulse (§3.4): the harmony engine steps the key every 8 collisions;
+    // mirror that into the store so AuroraPulse can fire. Registered outside
+    // render so it re-binds only when the engine instance changes.
+    useEffect(() => {
+      if (!engine) return;
+      engine.setModulationListener((index, name) => {
+        useGameStore.getState().setModulation(index, name);
+      });
+    }, [engine]);
+
     // Shimmer drone layer follows combo (§2.1): subscribe to the store OUTSIDE
     // React render so a combo tick never re-renders the canvas — the engine is
     // poked imperatively only when the threshold is crossed.
@@ -148,6 +165,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
         handleDivineLightToggle();
       } else if (key === 'b') {
         handleBinauralToggle();
+      } else if (key === 'f') {
+        handleFollowToggle();
       } else if (event.code === 'Space') {
         event.preventDefault();
         // Space always drops a marble, regardless of the selected module type.
@@ -220,6 +239,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
                 onNodeAdd={onNodeAdd}
                 divineLightActive={divineLightActive}
                 marbleDropTrigger={marbleDropTrigger}
+                followCamera={followCamera}
               />
             </Physics>
           </Suspense>
@@ -277,10 +297,12 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
           echoMode={echoMode}
           divineLightActive={divineLightActive}
           binauralActive={binauralActive}
+          followCamera={followCamera}
           onMute={handleMute}
           onEchoModeChange={handleEchoModeChange}
           onDivineLightToggle={handleDivineLightToggle}
           onBinauralToggle={handleBinauralToggle}
+          onFollowToggle={handleFollowToggle}
         />
 
         <ModuleSelector selectedNodeType={selectedNodeType} onSelect={handleModuleSelect} />

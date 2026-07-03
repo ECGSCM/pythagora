@@ -2,7 +2,8 @@ import React from 'react';
 import { Box, Cylinder } from '@react-three/drei';
 import { useBox, useCylinder, useHingeConstraint } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES } from '../../../config/world';
+import { MODULES, breathPhaseFromPosition } from '../../../config/world';
+import { useEmissiveBreath } from '../hooks';
 import type { StaticModuleProps } from '../types';
 
 // Seesaw — a real see-saw: a dynamic plank hinged onto a static pivot post,
@@ -38,11 +39,14 @@ export const Seesaw = React.memo(({ position, nodeId }: StaticModuleProps) => {
     axisB: [0, 0, 1],
   });
 
+  const matRef = useEmissiveBreath(breathPhaseFromPosition(position));
+
   return (
     <>
       <group ref={plankRef}>
         <Box args={cfg.plankArgs}>
           <meshStandardMaterial
+            ref={matRef}
             color={cfg.plankColor}
             metalness={0.5}
             roughness={0.5}

@@ -13,7 +13,14 @@ import { Modules } from './Modules';
 import { Atmosphere } from './Atmosphere';
 import { Marble } from './Marble';
 import { Ripple } from './Ripple';
-import { CompletionCelebration } from './effects';
+import {
+  CompletionCelebration,
+  ComboDisplay,
+  PerfectRunIndicator,
+  CameraFlow,
+  AuroraPulse,
+  PostFX,
+} from './effects';
 import type { CollisionHandler, MarbleState, Vec3 } from './types';
 
 interface SceneProps {
@@ -23,13 +30,14 @@ interface SceneProps {
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
   divineLightActive: boolean;
   marbleDropTrigger: number;
+  followCamera: boolean;
 }
 
 // Scene — composition only. All gameplay state lives in the zustand store, so a
 // collision re-renders only the hit module's flash (self-subscribed) and the
 // display components, never the whole scene (REFACTORING_PLAN.md §0.5 P1/P2).
 export const Scene = React.memo(
-  ({ nodes, onCollision, selectedNodeType, onNodeAdd, divineLightActive, marbleDropTrigger }: SceneProps) => {
+  ({ nodes, onCollision, selectedNodeType, onNodeAdd, divineLightActive, marbleDropTrigger, followCamera }: SceneProps) => {
     // Marbles + ripples stay in React state — they map to mounted components.
     const [marbles, setMarbles] = useState<MarbleState[]>([]);
     const [ripples, setRipples] = useState<Array<{ id: string; position: Vec3; color: string }>>([]);
@@ -128,7 +136,10 @@ export const Scene = React.memo(
     return (
       <>
         <PerspectiveCamera makeDefault position={CAMERA.position} fov={CAMERA.fov} />
+        {/* OrbitControls and CameraFlow fight over the camera, so only one is
+            live at a time: Follow disables the orbit controls. */}
         <OrbitControls
+          enabled={!followCamera}
           enablePan
           enableZoom
           enableRotate
@@ -137,6 +148,7 @@ export const Scene = React.memo(
           maxPolarAngle={CAMERA.orbit.maxPolarAngle}
           target={CAMERA.orbit.target}
         />
+        <CameraFlow enabled={followCamera} />
 
         <Lights divineLightActive={divineLightActive} />
 
@@ -183,8 +195,14 @@ export const Scene = React.memo(
         ))}
 
         <CompletionCelebration />
+        <ComboDisplay />
+        <PerfectRunIndicator />
+        <AuroraPulse />
 
         <Atmosphere />
+
+        {/* Post-processing wraps the whole render; keep it last. */}
+        <PostFX />
       </>
     );
   },

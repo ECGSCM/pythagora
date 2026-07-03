@@ -7,10 +7,12 @@ interface ControlsOverlayProps {
   echoMode: EchoMode;
   divineLightActive: boolean;
   binauralActive: boolean;
+  followCamera: boolean;
   onMute: () => void;
   onEchoModeChange: (mode: EchoMode) => void;
   onDivineLightToggle: () => void;
   onBinauralToggle: () => void;
+  onFollowToggle: () => void;
 }
 
 // Floating audio-control toolbar (mute / echo / divine light). Pure MUI, styled
@@ -20,10 +22,12 @@ export function ControlsOverlay({
   echoMode,
   divineLightActive,
   binauralActive,
+  followCamera,
   onMute,
   onEchoModeChange,
   onDivineLightToggle,
   onBinauralToggle,
+  onFollowToggle,
 }: ControlsOverlayProps) {
   return (
     <MUIBox
@@ -171,6 +175,27 @@ export function ControlsOverlay({
             aria-label={binauralActive ? 'Disable binaural drift' : 'Enable binaural drift'}
           >
             <MUIBox sx={{ fontSize: { xs: 16, sm: 20 } }}>◐</MUIBox>
+          </IconButton>
+        </Tooltip>
+
+        {/* Follow Camera Control */}
+        <Tooltip title="Follow camera (Press F)">
+          <IconButton
+            onClick={onFollowToggle}
+            sx={{
+              background: followCamera ? '#0A0A0A' : '#000000',
+              border: followCamera ? '1px solid #FFFFFF' : '1px solid #333333',
+              color: '#FFFFFF',
+              width: { xs: 36, sm: 48 },
+              height: { xs: 36, sm: 48 },
+              '&:hover': {
+                background: '#0A0A0A',
+                border: '1px solid #FFFFFF',
+              },
+            }}
+            aria-label={followCamera ? 'Disable follow camera' : 'Enable follow camera'}
+          >
+            <MUIBox sx={{ fontSize: { xs: 16, sm: 20 } }}>◎→</MUIBox>
           </IconButton>
         </Tooltip>
       </MUIBox>
