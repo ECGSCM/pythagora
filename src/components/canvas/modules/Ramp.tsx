@@ -20,7 +20,7 @@ export const Ramp = React.memo(({ position, nodeId, params }: StaticModuleProps)
     args: cfg.args,
     type: 'Static',
     material: cfg.material,
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'ramp' as const },
   }));
 
   const matRef = useEmissiveBreath(breathPhaseFromPosition(position));

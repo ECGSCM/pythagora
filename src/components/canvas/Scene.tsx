@@ -25,6 +25,8 @@ import type { CollisionHandler, MarbleState, Vec3 } from './types';
 
 interface SceneProps {
   nodes: PatchNode[];
+  /** Live audio channel: Physics3DCanvas passes an inline that calls
+   * engine.triggerCollision. (The old App-level no-op forward is gone.) */
   onCollision?: CollisionHandler;
   selectedNodeType?: PatchNode['type'];
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
@@ -40,15 +42,46 @@ export const Scene = React.memo(
   ({ nodes, onCollision, selectedNodeType, onNodeAdd, divineLightActive, marbleDropTrigger, followCamera }: SceneProps) => {
     // Marbles + ripples stay in React state — they map to mounted components.
     const [marbles, setMarbles] = useState<MarbleState[]>([]);
+    // Ids of marbles being evicted by the spawn cap: they're routed through the
+    // normal ascension fade instead of being unmounted instantly, so a capped
+    // spawn shrinks/fades the oldest orb (and still fires marbleCompleted via
+    // onSettle) rather than snapping it out of existence.
+    const [evictingIds, setEvictingIds] = useState<string[]>([]);
     const [ripples, setRipples] = useState<Array<{ id: string; position: Vec3; color: string }>>([]);
+
+    // Mirror marble/eviction state in refs so addMarble — called from the frame
+    // loop — can read the latest committed values synchronously.
+    const marblesRef = useRef(marbles);
+    marblesRef.current = marbles;
+    const evictingRef = useRef(evictingIds);
+    evictingRef.current = evictingIds;
 
     const addMarble = (position: Vec3) => {
       const newMarble: MarbleState = {
         id: `marble-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         position,
       };
-      // Cap enforced at spawn time; settled marbles are removed by onSettle.
-      setMarbles((prev) => [...prev, newMarble].slice(-MARBLE.spawnCap));
+      const current = marblesRef.current;
+      const evicting = evictingRef.current;
+
+      // Hard safety clamp: eviction keeps the active count at the cap, but if it
+      // ever stalls (a marble that refuses to settle) fall back to the old
+      // instant slice so the array can't grow without bound.
+      if (current.length >= MARBLE.spawnCap + 4) {
+        setMarbles([...current, newMarble].slice(-MARBLE.spawnCap));
+        return;
+      }
+
+      // Append the new marble unconditionally.
+      setMarbles([...current, newMarble]);
+
+      // At/over the cap, evict the oldest marble that isn't already evicting —
+      // it begins its ascension fade (see <Marble evict>).
+      const activeCount = current.reduce((n, m) => (evicting.includes(m.id) ? n : n + 1), 0);
+      if (activeCount >= MARBLE.spawnCap) {
+        const oldest = current.find((m) => !evicting.includes(m.id));
+        if (oldest) setEvictingIds([...evicting, oldest.id]);
+      }
     };
 
     // Space-key marble drops are processed in the frame loop (not an effect) so
@@ -96,7 +129,7 @@ export const Scene = React.memo(
       // Combo/unlock/stats/perfect-run/module-flash all live in the store now.
       registerCollision(event);
 
-      // Trigger audio.
+      // Trigger audio (engine.triggerCollision, via the inline from the shell).
       onCollision?.(event);
 
       // Ripple color based on the pre-hit multiplier/unlocks.
@@ -127,9 +160,11 @@ export const Scene = React.memo(
       setRipples((prev) => prev.filter((r) => r.id !== rippleId));
     };
 
-    // A marble reports itself done (rest / fell out) — remove it and celebrate.
+    // A marble reports itself done (rest / fell out / evicted) — remove it from
+    // both the marble list and the eviction set, then celebrate.
     const handleMarbleSettle = useLiveCallback((id: string) => {
       setMarbles((prev) => (prev.some((m) => m.id === id) ? prev.filter((m) => m.id !== id) : prev));
+      setEvictingIds((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : prev));
       useGameStore.getState().marbleCompleted();
     });
 
@@ -180,6 +215,7 @@ export const Scene = React.memo(
             key={marble.id}
             id={marble.id}
             position={marble.position}
+            evict={evictingIds.includes(marble.id)}
             onCollide={handleCollision}
             onSettle={handleMarbleSettle}
           />

@@ -13,7 +13,6 @@ import { Physics3DCanvas } from './components/Physics3DCanvas';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { PatchNode } from './types/patch';
-import { CollisionEvent } from './types/events';
 import type { SessionSummary } from './types/session';
 import { DEMO_LAYOUT, getDefaultParams } from './config/world';
 import { PRESENCE } from './config/experience';
@@ -190,12 +189,6 @@ function App() {
     });
   }, [selectedModuleType]);
 
-  // Handle collision events. No UI currently reacts to individual
-  // collisions — Phase 5 asset — wired up later (REFACTORING_PLAN.md §0.6).
-  const handleCollision = useCallback((_event: CollisionEvent) => {
-    // Collision feedback can be handled here for UI updates
-  }, []);
-
   // Handle module type selection
   const handleSelectionChange = useCallback((moduleType: PatchNode['type']) => {
     setSelectedModuleType(moduleType);
@@ -242,7 +235,6 @@ function App() {
             <Physics3DCanvas
               nodes={nodes}
               onNodeAdd={handleModuleAdd}
-              onCollision={handleCollision}
               onModuleTypeChange={handleSelectionChange}
               selectedNodeType={selectedModuleType}
               onClearAll={handleClearAll}

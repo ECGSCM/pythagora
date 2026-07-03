@@ -1,10 +1,9 @@
 // Barrel for the scene effect components.
 //
-// CompletionCelebration is mounted by Scene today. The rest (ComboDisplay,
-// PerfectRunIndicator, CameraFlow, ParticleTrail) are finished assets that
-// aren't mounted yet — Phase 5 wires them in. Re-exporting them here keeps
-// them referenced (so noUnusedLocals stays happy) and makes Phase 5 a
-// one-line import.
+// Every effect here is mounted in the live scene: Scene.tsx mounts
+// CompletionCelebration, ComboDisplay, PerfectRunIndicator, CameraFlow,
+// AuroraPulse and PostFX; Marble.tsx mounts ParticleTrail. This barrel exists
+// purely for import ergonomics — one grouped import instead of seven.
 
 export { ComboDisplay } from './ComboDisplay';
 export { CompletionCelebration } from './CompletionCelebration';

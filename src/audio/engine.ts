@@ -21,9 +21,23 @@ import {
 /** Fired when the harmony key changes; Phase 5B drives the Aurora pulse. */
 export type ModulationListener = (keyIndex: number, keyName: string) => void;
 
-// nodeId substring -> instrument. Mirrors the old triggerCollision dispatch
-// (audio.ts:992-1009); anything unrecognised falls back to the impact sound.
-function mapInstrument(nodeId: string): InstrumentName {
+// Collision event -> instrument. Prefers the explicit `moduleType` the physics
+// body carries in userData (exact, order-independent) and falls back to the
+// legacy nodeId substring scan (audio.ts:992-1009) for events without a type;
+// anything unrecognised falls back to the impact sound.
+function mapInstrument(event: CollisionEvent): InstrumentName {
+  switch (event.moduleType) {
+    case 'bumper':
+    case 'chime':
+    case 'bell':
+    case 'spinner':
+    case 'ramp':
+    case 'funnel':
+    case 'seesaw':
+      return event.moduleType;
+  }
+
+  const nodeId = event.nodeId;
   if (nodeId.includes('bumper')) return 'bumper';
   if (nodeId.includes('chime')) return 'chime';
   if (nodeId.includes('bell')) return 'bell';
@@ -63,6 +77,10 @@ export class AudioEngine {
 
   private resumePromise: Promise<void> | null = null;
   private resumeErrorLogged = false;
+  // Once disposed, in-flight resumes and incoming collisions must no-op: the
+  // shared global AudioContext can resolve a pending Tone.start() long after
+  // dispose(), which would otherwise restart the disposed drone on dead nodes.
+  private disposed = false;
 
   // Harmony advances one step every HARMONY_STEP_INTERVAL collisions (§2.2).
   private collisionCount = 0;
@@ -86,6 +104,7 @@ export class AudioEngine {
    * there is no unhandled promise (A11).
    */
   async resume(): Promise<void> {
+    if (this.disposed) return;
     if (Tone.getContext().state === 'running') {
       this.startDroneIfRunning();
       return;
@@ -110,19 +129,21 @@ export class AudioEngine {
 
   /** Start the drone iff the context is running; start() self-guards re-entry. */
   private startDroneIfRunning(): void {
+    if (this.disposed) return;
     if (Tone.getContext().state === 'running') {
       this.drone.start();
     }
   }
 
   triggerCollision(event: CollisionEvent): void {
+    if (this.disposed) return;
     // Pre-gesture the context may still be suspended; kick a resume without
     // blocking the hit. resume() already swallows its own rejection.
     if (Tone.getContext().state !== 'running') {
       void this.resume();
     }
 
-    const instrument = mapInstrument(event.nodeId);
+    const instrument = mapInstrument(event);
     const velocityGain = mapVelocity(event.velocity);
     const brightness = mapBrightness(event.velocity);
 
@@ -200,6 +221,7 @@ export class AudioEngine {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.drone.dispose();
     this.voices.dispose();
     this.bus.dispose();

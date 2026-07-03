@@ -14,7 +14,7 @@ export const Chime = React.memo(({ position, nodeId, params }: StaticModuleProps
     position,
     args: cfg.args,
     type: 'Static',
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'chime' as const },
   }));
 
   const matRef = useHitFlash(

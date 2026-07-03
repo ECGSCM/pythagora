@@ -4,10 +4,8 @@ import { Suspense } from 'react';
 import { Physics } from '@react-three/cannon';
 import { Box as MUIBox, Typography } from '@mui/material';
 import { AudioEngine } from '../audio/engine';
-import type { CollisionEvent } from '../types/events';
 import type { PatchNode } from '../types/patch';
-import { PHYSICS } from '../config/world';
-import { SHIMMER_COMBO_THRESHOLD } from '../audio/constants';
+import { PHYSICS, GAMEPLAY } from '../config/world';
 import { PRESENCE } from '../config/experience';
 import { useGameStore } from '../stores/gameStore';
 import { Scene } from './canvas/Scene';
@@ -17,12 +15,10 @@ import { useLiveCallback } from './canvas/hooks';
 import type { SessionSummary } from '../types/session';
 
 type EchoMode = 'off' | 'short' | 'long';
-type CollisionHandler = (event: CollisionEvent) => void;
 
 interface Physics3DCanvasProps {
   nodes: PatchNode[];
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
-  onCollision?: CollisionHandler;
   onModuleTypeChange?: (moduleType: PatchNode['type']) => void;
   selectedNodeType?: PatchNode['type'];
   onClearAll?: () => void;
@@ -41,7 +37,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
   ({
     nodes,
     onNodeAdd,
-    onCollision,
     onModuleTypeChange,
     selectedNodeType = 'marble',
     onClearAll,
@@ -143,20 +138,24 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
 
     // Shimmer drone layer follows combo (§2.1): subscribe to the store OUTSIDE
     // React render so a combo tick never re-renders the canvas — the engine is
-    // poked imperatively only when the threshold is crossed.
+    // poked imperatively only when the threshold is crossed. The shimmer and the
+    // goldenMarble unlock are one synchronized event, so the threshold is the
+    // single game-layer value GAMEPLAY.unlockThresholds.goldenMarble (the audio
+    // package must not depend on game config — the engine API stays a bool).
+    const shimmerThreshold = GAMEPLAY.unlockThresholds.goldenMarble;
     useEffect(() => {
       if (!engine) return;
-      let prevActive = useGameStore.getState().combo.count >= SHIMMER_COMBO_THRESHOLD;
+      let prevActive = useGameStore.getState().combo.count >= shimmerThreshold;
       engine.setShimmer(prevActive);
       const unsubscribe = useGameStore.subscribe((state) => {
-        const active = state.combo.count >= SHIMMER_COMBO_THRESHOLD;
+        const active = state.combo.count >= shimmerThreshold;
         if (active !== prevActive) {
           prevActive = active;
           engine.setShimmer(active);
         }
       });
       return unsubscribe;
-    }, [engine]);
+    }, [engine, shimmerThreshold]);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore auto-repeat (holding Space shouldn't hose the scene) and
@@ -253,7 +252,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
                 onCollision={(event) => {
                   // The engine resumes its own context internally on first hit.
                   engine?.triggerCollision(event);
-                  onCollision?.(event);
                 }}
                 selectedNodeType={selectedNodeType}
                 onNodeAdd={onNodeAdd}

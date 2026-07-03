@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PALETTE } from '../../../config/experience';
@@ -13,23 +13,35 @@ export const CompletionCelebration = React.memo(() => {
   const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const enabled = useGameStore((s) => s.completionCelebration.enabled);
   const clearCelebration = useGameStore((s) => s.clearCelebration);
-  const [progress, setProgress] = useState(0);
+
+  // Ref-driven exactly like Ripple: scale/opacity come from the CURRENT
+  // progress (no one-frame lag) and clearCelebration fires directly from the
+  // frame loop, guarded by a one-shot ref — never inside a setState updater.
+  const progressRef = useRef(0);
+  const clearedRef = useRef(false);
+  const prevEnabledRef = useRef(false);
 
   useFrame((_state, delta) => {
+    // Reset on the enabled false -> true transition (a new celebration).
+    if (enabled && !prevEnabledRef.current) {
+      progressRef.current = 0;
+      clearedRef.current = false;
+    }
+    prevEnabledRef.current = enabled;
+
     if (!enabled || !groupRef.current) return;
 
-    setProgress((prev) => {
-      const next = prev + delta * 0.5; // ~2s
-      if (next >= 1) {
-        clearCelebration();
-        return 1;
-      }
-      return next;
-    });
+    progressRef.current = Math.min(1, progressRef.current + delta * 0.5); // ~2s
+    const progress = progressRef.current;
 
     const scale = 1 + progress * 3;
     groupRef.current.scale.setScalar(scale);
     if (ringMatRef.current) ringMatRef.current.opacity = (1 - progress) * 0.6;
+
+    if (progress >= 1 && !clearedRef.current) {
+      clearedRef.current = true;
+      clearCelebration();
+    }
   });
 
   if (!enabled) return null;

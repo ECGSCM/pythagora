@@ -14,7 +14,7 @@ export const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
     position,
     args: cfg.args,
     type: 'Static',
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'funnel' as const },
   }));
 
   const matRef = useEmissiveBreath(breathPhaseFromPosition(position));

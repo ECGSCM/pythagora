@@ -306,16 +306,12 @@ function createRamp(pitch: PitchContext): Voice {
   const metalEnv3 = new Tone.AmplitudeEnvelope({ attack: 0.01, decay: 1.0, sustain: 0.03, release: 2.0 });
   const mainEnv = new Tone.AmplitudeEnvelope({ attack: 0.005, decay: 0.3, sustain: 0.05, release: 3.0 });
 
-  const pitchSlide = new Tone.FrequencyEnvelope({
-    attack: 0.01,
-    decay: 0.2,
-    sustain: 0,
-    release: 0.5,
-    attackCurve: 'exponential',
-    releaseCurve: 'exponential',
-  });
+  // Subtle 0.7s downward bend (suikinkutsu "plink"): a gentle slide from
+  // baseFreq to baseFreq * 0.98, applied directly to the oscillator frequency
+  // in trigger(). (The old FrequencyEnvelope was mis-called with a frequency
+  // as its duration arg and the context time as its velocity, so it injected a
+  // huge, session-age-dependent pitch offset — removed entirely.)
   const targetFreq = baseFreq * 0.98;
-  pitchSlide.connect(osc.frequency);
 
   const filterHz = 2000;
   const filter = new Tone.Filter({ frequency: filterHz, type: 'lowpass', Q: 0.5 });
@@ -359,13 +355,15 @@ function createRamp(pitch: PitchContext): Voice {
       metalEnv1.triggerAttackRelease('6s', now);
       metalEnv2.triggerAttackRelease('5s', now + 0.05);
       metalEnv3.triggerAttackRelease('4s', now + 0.1);
-      pitchSlide.triggerAttackRelease(targetFreq, '0.7s', now);
+      // Gentle downward bend on the fundamental over 0.7s.
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.exponentialRampTo(targetFreq, 0.7, now);
     },
     dispose() {
       stopAll(oscs);
       disposeAll([
         osc, metalOsc1, metalOsc2, metalOsc3, filter, mainEnv, metalEnv1, metalEnv2, metalEnv3,
-        pitchSlide, mainGain, metalGain1, metalGain2, metalGain3, output,
+        mainGain, metalGain1, metalGain2, metalGain3, output,
       ]);
     },
   };

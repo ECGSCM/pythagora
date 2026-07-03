@@ -45,7 +45,10 @@ export const MARBLE = {
   fallLimitY: -8,
 
   // Spawn behaviour.
-  spawnCap: 10, // most simultaneous marbles
+  // Cap on ACTIVE marbles: spawning past it evicts the oldest via the ascension
+  // fade (Scene.addMarble / <Marble evict>), not an instant unmount. A few
+  // extra orbs may exist briefly while they fade out.
+  spawnCap: 10,
   spawnHeight: 12, // Space-drop height
   spawnClickMinY: 0.5, // click-spawned marbles never spawn below this
   spawnSpreadX: 10, // Space-drop horizontal spread: (rand-0.5) * spread

@@ -140,7 +140,10 @@ export const DRONE_SHIMMER_FREQS = [2093, 3136]; // C7 + G7
 export const DRONE_SHIMMER_LEVEL_DB = -50;
 export const DRONE_SHIMMER_LFO_HZ = 0.05;
 export const DRONE_SHIMMER_FADE_SEC = 2;
-export const SHIMMER_COMBO_THRESHOLD = 10; // combo count that arms shimmer
+// NOTE: the combo count that arms the shimmer lives in the game layer
+// (GAMEPLAY.unlockThresholds.goldenMarble) — shimmer and the goldenMarble
+// unlock are one synchronized event. The audio package must not depend on game
+// config, so the engine API stays setShimmer(bool) and the shell owns the gate.
 
 // Pad key crossfade when the harmony key changes.
 export const DRONE_KEY_CROSSFADE_SEC = 2;

@@ -14,7 +14,7 @@ export const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
     position,
     args: cfg.args,
     type: 'Static',
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'bell' as const },
   }));
 
   const matRef = useHitFlash(

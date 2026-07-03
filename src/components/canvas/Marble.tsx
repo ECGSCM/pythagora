@@ -10,10 +10,14 @@ import { marblePositions } from './marblePositions';
 import { ParticleTrail } from './effects';
 import type { CollisionHandler, Vec3 } from './types';
 import type { CollisionEvent } from '../../types/events';
+import type { PatchNode } from '../../types/patch';
 
 interface MarbleProps {
   id: string;
   position: Vec3;
+  /** Spawn-cap eviction: when true, begin the ascension fade immediately so the
+   * oldest orb dissolves gracefully instead of being unmounted mid-flight. */
+  evict?: boolean;
   onCollide: CollisionHandler;
   /** Called once the marble finishes its run AND its ascension fade completes. */
   onSettle: (id: string) => void;
@@ -23,7 +27,7 @@ interface MarbleProps {
 // (the old per-marble pointLight is gone — bloom is cheaper and prettier). A
 // ParticleTrail streams behind it, and instead of vanishing on rest it ascends:
 // a 1s fade (scale down, emissive up then out) with motes drifting upward.
-export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleProps) => {
+export const Marble = React.memo(({ id, position, evict = false, onCollide, onSettle }: MarbleProps) => {
   const liveOnCollide = useLiveCallback(onCollide);
   const liveOnSettle = useLiveCallback(onSettle);
   const golden = useGameStore((s) => s.unlocks.goldenMarble);
@@ -34,11 +38,15 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
     args: [MARBLE.radius],
     material: MARBLE.material,
     onCollide: (e) => {
-      const nodeId = (e.body?.userData as { nodeId?: string } | undefined)?.nodeId;
+      const userData = e.body?.userData as
+        | { nodeId?: string; moduleType?: PatchNode['type'] }
+        | undefined;
+      const nodeId = userData?.nodeId;
       if (nodeId) {
         const cp = e.contact?.contactPoint as number[] | undefined;
         const collisionEvent: CollisionEvent = {
           nodeId,
+          moduleType: userData?.moduleType,
           velocity: Math.abs(e.contact?.impactVelocity ?? 5),
           position: cp ? { x: cp[0], y: cp[1], z: cp[2] } : { x: 0, y: 0, z: 0 },
           timestamp: Date.now(),
@@ -104,8 +112,13 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
     // Stop interacting with the world during the fade: the body no longer
-    // pushes anything (collisionResponse off) and is frozen in place.
+    // pushes anything (collisionResponse off) and is frozen in place. Zeroing
+    // velocity alone isn't enough on the fall-out path — cannon-es still
+    // integrates gravity each step, so the body would keep accelerating during
+    // the 1s fade. Mass 0 → invMass 0, which makes integrate() skip the force/
+    // gravity step entirely, truly freezing the body.
     api.collisionResponse.set(false);
+    api.mass.set(0);
     api.velocity.set(0, 0, 0);
     api.angularVelocity.set(0, 0, 0);
     // Seed the ascension motes at the settle position.
@@ -145,9 +158,18 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
       return;
     }
 
+    // Spawn-cap eviction: begin the ascension fade immediately (once), so the
+    // oldest orb dissolves gracefully instead of vanishing.
+    if (evict && !settled.current) {
+      beginAscension();
+      return;
+    }
+
     if (mesh) {
-      mesh.rotation.x += 0.02;
-      mesh.rotation.y += 0.02;
+      // Delta-scaled idle spin (~1.2 rad/s) so the rate is refresh-rate
+      // independent (matches the old 0.02/frame @ 60fps feel).
+      mesh.rotation.x += delta * 1.2;
+      mesh.rotation.y += delta * 1.2;
     }
 
     if (settled.current) return;

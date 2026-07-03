@@ -15,7 +15,7 @@ export const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProp
     args: cfg.args,
     type: 'Static',
     material: cfg.material,
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'bumper' as const },
   }));
 
   const matRef = useHitFlash(

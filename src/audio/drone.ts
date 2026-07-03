@@ -126,6 +126,9 @@ export class AmbientDrone {
   private readonly sources: Source[] = [];
 
   private started = false;
+  // Once disposed the nodes are dead; a late start() (e.g. from a resume that
+  // resolved after dispose()) must not re-run and leak a new silence interval.
+  private disposed = false;
   private shimmerActive = false;
   private binauralActive = false;
   private lastCollisionMs = 0;
@@ -267,7 +270,7 @@ export class AmbientDrone {
    * against double-start).
    */
   start(): void {
-    if (this.started) return;
+    if (this.disposed || this.started) return;
     this.started = true;
     this.lastCollisionMs = Date.now();
 
@@ -351,6 +354,7 @@ export class AmbientDrone {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.started = false;
     if (this.silenceTimer !== null) {
       clearInterval(this.silenceTimer);

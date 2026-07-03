@@ -97,6 +97,13 @@ const initialCelebration = (): CompletionCelebrationState => ({ enabled: false, 
 // old Scene useEffect that cleared/re-created its timeout on each collision.
 let comboResetTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Session epoch: incremented by reset(). Every anonymous display-hide timeout
+// (comboDisplay, perfectRun, unlock flash, celebration) captures the epoch when
+// it is armed and no-ops if the epoch has since changed, so a timer armed in one
+// session can't fire its state change into the NEXT session after ESC → reset →
+// re-enter.
+let sessionEpoch = 0;
+
 export const useGameStore = create<GameState>((set, get) => {
   // Re-arm the "combo expires after N ms of silence" timer.
   const armComboResetTimer = () => {
@@ -125,40 +132,47 @@ export const useGameStore = create<GameState>((set, get) => {
 
     registerCollision: (event) => {
       const { combo, unlocks, sessionStats, perfectRun, moduleHits } = get();
-
-      // Flash the struck module (P11).
-      set({ moduleHits: { ...moduleHits, [event.nodeId]: event.timestamp } });
+      const epoch = sessionEpoch;
 
       const now = Date.now();
       const timeSinceLastCollision = now - combo.lastCollisionTime;
+
+      // Accumulate every slice change into a single update object so one
+      // collision fires exactly one store notification (the old code fanned
+      // out up to 8 set() calls per hit). Behaviour is unchanged — only the
+      // notification count differs.
+      const updates: Partial<GameState> = {
+        // Flash the struck module (P11).
+        moduleHits: { ...moduleHits, [event.nodeId]: event.timestamp },
+      };
 
       if (timeSinceLastCollision < GAMEPLAY.comboTimeoutMs) {
         // Continue combo.
         const newCombo = combo.count + 1;
         const newMultiplier = calculateMultiplier(newCombo);
-        set({ combo: { ...get().combo, count: newCombo, multiplier: newMultiplier } });
+        updates.combo = { ...combo, count: newCombo, multiplier: newMultiplier, lastCollisionTime: now };
 
         // Update session stats.
-        set({
-          sessionStats: {
-            totalCollisions: sessionStats.totalCollisions + 1,
-            maxCombo: Math.max(sessionStats.maxCombo, newCombo),
-            totalScore: sessionStats.totalScore + GAMEPLAY.scorePerHit * newMultiplier,
-          },
-        });
+        updates.sessionStats = {
+          totalCollisions: sessionStats.totalCollisions + 1,
+          maxCombo: Math.max(sessionStats.maxCombo, newCombo),
+          totalScore: sessionStats.totalScore + GAMEPLAY.scorePerHit * newMultiplier,
+        };
 
         // Show combo display if the multiplier increased.
         if (newMultiplier > combo.multiplier) {
-          set({ comboDisplay: { show: true, text: `${newMultiplier}x COMBO!`, scale: 1.5 } });
+          updates.comboDisplay = { show: true, text: `${newMultiplier}x COMBO!`, scale: 1.5 };
           setTimeout(() => {
+            if (sessionEpoch !== epoch) return;
             set({ comboDisplay: { ...get().comboDisplay, show: false, scale: 1 } });
           }, GAMEPLAY.comboDisplayHideMs);
         }
 
         // Check for perfect run (high combo without misses).
         if (newCombo >= GAMEPLAY.perfectRunThreshold && !perfectRun.active) {
-          set({ perfectRun: { active: true, flawlessHits: newCombo } });
+          updates.perfectRun = { active: true, flawlessHits: newCombo };
           setTimeout(() => {
+            if (sessionEpoch !== epoch) return;
             set({ perfectRun: { active: false, flawlessHits: 0 } });
           }, GAMEPLAY.perfectRunHideMs);
         }
@@ -166,7 +180,7 @@ export const useGameStore = create<GameState>((set, get) => {
         // Update flawless hits counter (uses the pre-update perfectRun.active,
         // matching the old async-setState semantics).
         if (perfectRun.active) {
-          set({ perfectRun: { ...get().perfectRun, flawlessHits: newCombo } });
+          updates.perfectRun = { ...perfectRun, flawlessHits: newCombo };
         }
 
         // Check for unlocks.
@@ -188,32 +202,36 @@ export const useGameStore = create<GameState>((set, get) => {
           newUnlocks.goldenMode = true;
           unlockTriggered = true;
         }
-        set({ unlocks: newUnlocks });
+        updates.unlocks = newUnlocks;
 
         if (unlockTriggered) {
           // Trigger the color-dimension visual effect instead of text.
-          set({ comboDisplay: { show: true, text: '', scale: 0 } });
+          updates.comboDisplay = { show: true, text: '', scale: 0 };
           setTimeout(() => {
+            if (sessionEpoch !== epoch) return;
             set({ comboDisplay: { ...get().comboDisplay, show: false, scale: 1 } });
           }, GAMEPLAY.unlockDisplayHideMs);
         }
       } else {
-        // Reset combo.
-        set({ combo: { ...get().combo, count: 1, multiplier: 1 } });
-        set({
-          sessionStats: {
-            ...sessionStats,
-            totalCollisions: sessionStats.totalCollisions + 1,
-            totalScore: sessionStats.totalScore + GAMEPLAY.scorePerHit,
-          },
-        });
+        // Reset combo. The first hit of every session lands here (lastCollision
+        // starts at 0), so maxCombo must be lifted to at least 1 and any stale
+        // perfect-run banner cleared — otherwise it could outlive a broken chain.
+        updates.combo = { ...combo, count: 1, multiplier: 1, lastCollisionTime: now };
+        updates.sessionStats = {
+          ...sessionStats,
+          totalCollisions: sessionStats.totalCollisions + 1,
+          maxCombo: Math.max(sessionStats.maxCombo, 1),
+          totalScore: sessionStats.totalScore + GAMEPLAY.scorePerHit,
+        };
+        updates.perfectRun = { active: false, flawlessHits: 0 };
       }
 
-      set({ combo: { ...get().combo, lastCollisionTime: now } });
+      set(updates);
       armComboResetTimer();
     },
 
     marbleCompleted: () => {
+      const epoch = sessionEpoch;
       set({
         completionCelebration: {
           enabled: true,
@@ -221,6 +239,7 @@ export const useGameStore = create<GameState>((set, get) => {
         },
       });
       setTimeout(() => {
+        if (sessionEpoch !== epoch) return;
         set({ completionCelebration: { ...get().completionCelebration, enabled: false } });
       }, GAMEPLAY.celebrationHideMs);
     },
@@ -230,6 +249,9 @@ export const useGameStore = create<GameState>((set, get) => {
     },
 
     reset: () => {
+      // Advance the epoch so any display-hide timers armed in the prior session
+      // no-op when they fire (see sessionEpoch note above).
+      sessionEpoch += 1;
       if (comboResetTimer) {
         clearTimeout(comboResetTimer);
         comboResetTimer = null;

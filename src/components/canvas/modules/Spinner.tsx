@@ -42,7 +42,7 @@ export const Spinner = React.memo(({ position, nodeId, params }: StaticModulePro
       { type: 'Box', args: cfg.paddleArgsA, position: [0, 0, 0] },
       { type: 'Box', args: cfg.paddleArgsB, position: [0, 0, 0] },
     ],
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'spinner' as const },
   }));
 
   // Constant spin about the world Z axis; the physics transform drives the

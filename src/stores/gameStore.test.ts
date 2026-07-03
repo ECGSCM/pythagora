@@ -40,6 +40,21 @@ describe('gameStore.registerCollision', () => {
     expect(s.moduleHits['bumper-1']).toBe(0);
   });
 
+  it('lifts maxCombo to 1 on the first isolated hit at a realistic clock', () => {
+    // With a realistic wall clock the first hit takes the reset branch
+    // (lastCollisionTime starts at 0, so the gap exceeds the combo timeout).
+    // At system time 0 that branch is never reached, which masked a bug where
+    // the reset branch never updated maxCombo.
+    vi.setSystemTime(1_700_000_000_000);
+    useGameStore.getState().registerCollision(hit());
+    const s = useGameStore.getState();
+    expect(s.combo.count).toBe(1);
+    expect(s.sessionStats.totalCollisions).toBe(1);
+    expect(s.sessionStats.maxCombo).toBe(1);
+    // A stale perfect-run banner must not survive the reset branch.
+    expect(s.perfectRun).toEqual({ active: false, flawlessHits: 0 });
+  });
+
   it('raises the multiplier through its tiers as the combo grows', () => {
     combo(5);
     expect(useGameStore.getState().combo.multiplier).toBe(2); // >= 5

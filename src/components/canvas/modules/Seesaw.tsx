@@ -20,7 +20,7 @@ export const Seesaw = React.memo(({ position, nodeId }: StaticModuleProps) => {
     angularDamping: cfg.plankAngularDamping,
     linearDamping: cfg.plankLinearDamping,
     material: cfg.plankMaterial,
-    userData: { nodeId },
+    userData: { nodeId, moduleType: 'seesaw' as const },
   }));
 
   const [baseRef] = useCylinder<THREE.Mesh>(() => ({
