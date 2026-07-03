@@ -2,19 +2,69 @@
 
 A client-side, physics-based marble-run synthesizer. Drop marbles onto a 3D
 board of modules — ramps, bumpers, chimes, spinners, funnels, seesaws, and
-bells — and their collisions trigger synthesized sounds. There is no backend:
-everything runs in the browser.
+bells — and their collisions trigger synthesized sound and light. There is no
+backend: everything runs in the browser, and the app works offline once
+installed.
 
-## Tech stack
+Design language: **"Sound is Light."** The world defaults to near-black;
+sound is the only thing that makes it glow. See `docs/EXPERIENCE_DESIGN.md`
+for the full aesthetic spec.
 
-- **React 19** + **Vite 7** + TypeScript (strict)
-- **three.js**, **@react-three/fiber**, **@react-three/drei**, and
-  **@react-three/cannon** for the 3D scene and physics simulation
-- **Tone.js** for audio synthesis
-- **MUI** (Material UI) for the on-screen controls, using a custom "Divine
-  Monochrome" theme
+## Features
 
-## Running it
+- **Physics marble run** — ramps, bumpers, chimes, spinners, funnels, seesaws
+  and bells, each with real cannon-es colliders (ramps roll, spinners spin
+  and fling, seesaws hinge under a marble's weight).
+- **Ambient drone + circle-of-fifths key travel** — a three-layer drone
+  (Ground/Pad/Air) plays continuously; every 8 collisions the harmonic key
+  steps around the circle of fifths, and the drone's Pad layer crossfades to
+  follow. Collision pitch is drawn from the current key's pentatonic scale.
+- **Velocity-sensitive voices** — harder hits are louder *and* brighter
+  (velocity drives both amplitude and a lowpass cutoff), so the physics and
+  the sound share one cause.
+- **Bloom "Sound is Light" visuals** — a WebGL post-processing stack (bloom,
+  vignette, film grain) makes marbles glow like light and hit flashes bloom
+  with the same decay curve as their sound's release.
+- **A breathing world** — every module pulses on a shared ~5s breathing
+  cycle, phase-offset by position, so the whole scene reads as one organism.
+- **Combo / unlock system** — chained hits build a combo multiplier (shown
+  as a Roman numeral in-scene); long combos add a shimmering drone layer and
+  unlock an Aurora pulse on each key change.
+- **Disappearing UI** — the control overlay fades out after 30s of no input
+  and returns instantly on the next pointer or key event, so the canvas and
+  sound are the only things left on screen.
+- **Session summaries** — pressing `Esc` returns to the landing screen with
+  a one-line summary of that session (collisions, max combo, key reached).
+- **Binaural mode** — an optional L/R ±4Hz theta-beat layer mixed under the
+  drone (headphones recommended).
+- **Follow camera** — an optional camera mode that tracks the live marble
+  instead of the static overview.
+- **PWA / offline** — installable, works without a network connection after
+  first load.
+- **GitHub Pages deploy** — CI builds and deploys `main` automatically.
+
+## Controls
+
+Keyboard shortcuts work anywhere on the page (no need to click the canvas
+first) as soon as the app loads:
+
+| Key | Action |
+|---|---|
+| `1`–`8` | Select a module type: Origin/marble, Slope/ramp, Base/bumper, Hex/chime, Spiral/spinner, Portal/funnel, Balance/seesaw, Axis/bell |
+| `Space` | Drop a marble |
+| `M` | Mute / unmute |
+| `D` | Cycle echo send (off → short → long) |
+| `L` | Toggle the "Divine Light" overhead lighting effect |
+| `B` | Toggle binaural beats mode |
+| `F` | Toggle follow camera (tracks the live marble) |
+| `C` | Clear all placed modules and marbles |
+| `H` | Toggle the help card |
+| `Esc` | Exit to the landing screen (shows the session summary) |
+
+Clicking the board places the currently-selected module; clicking with
+"Origin" selected drops a marble at that position instead.
+
+## Development
 
 ```bash
 pnpm install
@@ -23,57 +73,55 @@ pnpm build          # type-check and build for production
 pnpm preview        # preview a production build locally
 pnpm lint           # eslint
 pnpm test:run       # vitest, single run
+pnpm test           # vitest, watch mode
 ```
 
-## Controls
-
-The canvas must have focus (click it once) for keyboard shortcuts to work.
-
-| Key | Action |
-|---|---|
-| `1`–`8` | Select a module type (Origin/marble, Slope/ramp, Base/bumper, Hex/chime, Spiral/spinner, Portal/funnel, Balance/seesaw, Axis/bell) |
-| `Space` | Drop a marble |
-| `M` | Mute / unmute |
-| `D` | Cycle echo mode (off → short → long) |
-| `L` | Toggle the "Divine Light" overhead lighting effect |
-
-The in-app help card also lists `C` (clear all), `H` (toggle help), and
-`Esc` (return to the landing screen) — these are not implemented yet and are
-tracked in `REFACTORING_PLAN.md` (Phase 2).
-
-Clicking the board places the currently-selected module; clicking with
-"Origin" selected drops a marble at that position instead.
-
-## Project status
-
-This project is mid-refactor. A large amount of dead code (an old 2D canvas
-renderer, a Supabase/Stripe backend integration that was never wired to the
-frontend, duplicate audio-bridge files, etc.) has been removed, and the
-TypeScript config now runs in strict mode with zero lint warnings. Several
-known physics and audio bugs remain (for example: ramps don't yet rotate
-their physics collider to match their visual tilt, so marbles don't reliably
-roll down them). See `REFACTORING_PLAN.md` for the full audit and the plan to
-fix them, and `CREATIVE_ENHANCEMENT_PLAN.md` for the intended end-state
-experience (ambient drone layers, harmonic progressions, combo/unlock
-system, etc.) that this refactor is working towards.
-
-## Deployment
-
-Static build, deployed to GitHub Pages. See `DEPLOYMENT.md`.
-
-## Project layout
+## Architecture
 
 ```
 src/
-  App.tsx                       — top-level state (modules, notifications) and theme
+  App.tsx                    — top-level state (landing/session), theme
+  audio/                     — Tone.js synthesis engine
+    bus.ts                   —   master chain (compressor → limiter → volume) + send buses
+    instruments.ts           —   declarative 8-voice instrument definitions (osc/ADSR/filter)
+    voices.ts                —   voice pool, polyphony cap, voice stealing
+    drone.ts                 —   ambient drone layers + binaural mode
+    harmony.ts               —   circle-of-fifths key travel
+    engine.ts                —   public API (trigger/mute/echo/dispose)
   components/
-    Physics3DCanvas.tsx         — the 3D scene, physics bodies, module components, UI overlay
-    ErrorBoundary.tsx
-  engines/
-    audio.ts                    — Tone.js-based synthesis engine
-    synthBridge3D.ts            — glue between physics collisions and the audio engine
-  pages/Landing.tsx             — entry splash screen
-  types/
-    patch.ts                    — PatchNode (module) type
-    events.ts                   — collision event type
+    Physics3DCanvas.tsx      — scene wiring: physics bodies, keyboard, engine lifecycle
+    canvas/                  — Scene, Ground, Lights, Marble, Ripple, modules/, effects/
+    ui/                      — ControlsOverlay, ModuleSelector, usePresence (disappearing UI)
+  stores/gameStore.ts        — zustand: combo, unlocks, session stats, modulation
+  config/
+    world.ts                 — physics constants, module dimensions, camera/lighting tuning
+    experience.ts             — palette, post-processing, aurora, starfield, presence timing
+  pages/Landing.tsx           — entry splash + session summary
+  types/                      — patch.ts (module type), events.ts, session.ts
 ```
+
+## Deployment
+
+Fully static, no environment variables. `vite.config.ts` sets
+`base: '/pythagora/'` to match this repository's name (`ECGSCM/pythagora`) —
+update it if you fork under a different name.
+
+`.github/workflows/ci.yml` runs lint, type-check, tests and a production
+build on every push/PR, then (on push to `main` only) builds again and
+deploys `dist/` to GitHub Pages via `actions/deploy-pages`. Enable Pages for
+the repository under Settings → Pages → Source: GitHub Actions. The site is
+served at `https://ecgscm.github.io/pythagora/`.
+
+To build and preview a production bundle locally:
+
+```bash
+pnpm build
+pnpm preview
+```
+
+## Further reading
+
+Design and audit documents live in `docs/`: `REFACTORING_PLAN.md` (the audit
+and fix plan this rebuild followed), `EXPERIENCE_DESIGN.md` (the "Sound is
+Light" visual/audio spec), and `CREATIVE_ENHANCEMENT_PLAN.md` (the original
+vision document).
