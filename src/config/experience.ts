@@ -87,3 +87,42 @@ export function romanMultiplier(multiplier: number): string {
       return '';
   }
 }
+
+// General-purpose Roman numeral conversion, unlike `romanMultiplier` (which
+// only covers the 2..5 multiplier tiers) this handles any positive integer —
+// used by the Landing session summary (§4.2) to render an arbitrary combo
+// streak ("VII chain"). Pure/table-driven, no allocation beyond the result
+// string.
+const ROMAN_TABLE: ReadonlyArray<readonly [number, string]> = [
+  [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+  [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+  [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+];
+
+/** Convert a positive integer to a Roman numeral string; 0 or below -> '0'. */
+export function toRomanNumeral(value: number): string {
+  let n = Math.floor(value);
+  if (n <= 0) return '0';
+  let out = '';
+  for (const [amount, numeral] of ROMAN_TABLE) {
+    while (n >= amount) {
+      out += numeral;
+      n -= amount;
+    }
+  }
+  return out;
+}
+
+// ==================== PRESENCE (§4.1) ====================
+
+/**
+ * "The UI exists to disappear": after `idleMs` of no pointer/keyboard/touch
+ * activity, overlay chrome (controls, module bar, help card) fades to
+ * invisible over `fadeOutSec`; any activity restores it over the much
+ * quicker `fadeInSec`. See `components/ui/usePresence.ts`.
+ */
+export const PRESENCE = {
+  idleMs: 30000,
+  fadeOutSec: 2,
+  fadeInSec: 0.3,
+} as const;

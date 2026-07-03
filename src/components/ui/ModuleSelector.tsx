@@ -54,9 +54,16 @@ export function ModuleSelector({ selectedNodeType, onSelect }: ModuleSelectorPro
       <MUIBox
         sx={{
           display: 'flex',
-          flexWrap: 'wrap',
+          // Mobile (§4.3): a single non-wrapping, swipeable row instead of the
+          // desktop wrap-grid; the scrollbar is hidden so it reads as a bare
+          // strip of touch targets rather than a browser-chrome scroll area.
+          flexWrap: { xs: 'nowrap', sm: 'wrap' },
+          overflowX: { xs: 'auto', sm: 'visible' },
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
           gap: { xs: 0.5, sm: 0.975 },
-          justifyContent: 'center',
+          justifyContent: { xs: 'flex-start', sm: 'center' },
           minWidth: { xs: 'auto', sm: 208 },
         }}
       >
@@ -68,9 +75,12 @@ export function ModuleSelector({ selectedNodeType, onSelect }: ModuleSelectorPro
                 background: selectedNodeType === module.type ? '#0A0A0A' : '#000000',
                 border: selectedNodeType === module.type ? '1px solid #FFFFFF' : '1px solid #333333',
                 color: '#FFFFFF',
-                width: { xs: 32, sm: 41.6 },
-                height: { xs: 32, sm: 41.6 },
-                minWidth: { xs: 32, sm: 41.6 },
+                // 44px meets the mobile touch-target minimum (§4.3); desktop
+                // keeps the original tighter sizing.
+                width: { xs: 44, sm: 41.6 },
+                height: { xs: 44, sm: 41.6 },
+                minWidth: { xs: 44, sm: 41.6 },
+                flexShrink: { xs: 0, sm: 1 },
                 padding: 0,
                 flexDirection: 'column',
                 gap: 0,

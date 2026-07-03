@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import { Physics } from '@react-three/cannon';
@@ -8,11 +8,13 @@ import type { CollisionEvent } from '../types/events';
 import type { PatchNode } from '../types/patch';
 import { PHYSICS } from '../config/world';
 import { SHIMMER_COMBO_THRESHOLD } from '../audio/constants';
+import { PRESENCE } from '../config/experience';
 import { useGameStore } from '../stores/gameStore';
 import { Scene } from './canvas/Scene';
 import { ControlsOverlay } from './ui/ControlsOverlay';
 import { ModuleSelector } from './ui/ModuleSelector';
 import { useLiveCallback } from './canvas/hooks';
+import type { SessionSummary } from '../types/session';
 
 type EchoMode = 'off' | 'short' | 'long';
 type CollisionHandler = (event: CollisionEvent) => void;
@@ -25,7 +27,11 @@ interface Physics3DCanvasProps {
   selectedNodeType?: PatchNode['type'];
   onClearAll?: () => void;
   onToggleHelp?: () => void;
-  onExit?: () => void;
+  onExit?: (summary: SessionSummary) => void;
+  /** Presence (§4.1): a single hook instance lives in App and is threaded down
+   * here so the help card (owned by App) and this shell's own overlays fade
+   * in lockstep off one shared idle timer. */
+  present: boolean;
 }
 
 // Canvas shell: owns the R3F Canvas + Physics provider, the audio engine
@@ -41,6 +47,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
     onClearAll,
     onToggleHelp,
     onExit,
+    present,
   }) => {
     const [engine, setEngine] = useState<AudioEngine | null>(null);
     const [isMuted, setIsMuted] = useState(false);
@@ -119,6 +126,11 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
       setFollowCamera((prev) => !prev);
     };
 
+    // Stable across renders (only changes when the engine instance itself
+    // does) so ControlsOverlay's pulse effect isn't torn down and rebuilt on
+    // every unrelated state change here (echo mode, follow camera, ...).
+    const getOutputLevel = useCallback(() => engine?.getOutputLevel() ?? 0, [engine]);
+
     // Aurora pulse (§3.4): the harmony engine steps the key every 8 collisions;
     // mirror that into the store so AuroraPulse can fire. Registered outside
     // render so it re-binds only when the engine instance changes.
@@ -176,7 +188,15 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
       } else if (key === 'h') {
         onToggleHelp?.();
       } else if (key === 'escape') {
-        onExit?.();
+        // Session summary snapshot (§4.2): captured at the moment of exit
+        // from the store's imperative getState() + the engine's current
+        // harmony key, so App can hand it to the Landing page.
+        const { totalCollisions, maxCombo } = useGameStore.getState().sessionStats;
+        onExit?.({
+          collisions: totalCollisions,
+          maxCombo,
+          keyName: engine?.getCurrentKeyName() ?? 'C',
+        });
       } else if (key >= '1' && key <= '8') {
         const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'] as const;
         const index = parseInt(key) - 1;
@@ -292,25 +312,53 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
           </MUIBox>
         )}
 
-        <ControlsOverlay
-          isMuted={isMuted}
-          echoMode={echoMode}
-          divineLightActive={divineLightActive}
-          binauralActive={binauralActive}
-          followCamera={followCamera}
-          onMute={handleMute}
-          onEchoModeChange={handleEchoModeChange}
-          onDivineLightToggle={handleDivineLightToggle}
-          onBinauralToggle={handleBinauralToggle}
-          onFollowToggle={handleFollowToggle}
-        />
+        {/* Presence (§4.1): overlay chrome fades to invisible after 30s of no
+            pointer/keyboard/touch activity, and back in quickly on the next
+            touch. Keyboard shortcuts keep working throughout — nothing here
+            unmounts, only fades — see usePresence.ts. */}
+        <MUIBox
+          sx={{
+            opacity: present ? 1 : 0,
+            transition: `opacity ${present ? PRESENCE.fadeInSec : PRESENCE.fadeOutSec}s`,
+            pointerEvents: present ? 'auto' : 'none',
+          }}
+        >
+          <ControlsOverlay
+            isMuted={isMuted}
+            echoMode={echoMode}
+            divineLightActive={divineLightActive}
+            binauralActive={binauralActive}
+            followCamera={followCamera}
+            present={present}
+            getLevel={getOutputLevel}
+            onMute={handleMute}
+            onEchoModeChange={handleEchoModeChange}
+            onDivineLightToggle={handleDivineLightToggle}
+            onBinauralToggle={handleBinauralToggle}
+            onFollowToggle={handleFollowToggle}
+          />
+        </MUIBox>
 
-        <ModuleSelector selectedNodeType={selectedNodeType} onSelect={handleModuleSelect} />
+        <MUIBox
+          sx={{
+            opacity: present ? 1 : 0,
+            transition: `opacity ${present ? PRESENCE.fadeInSec : PRESENCE.fadeOutSec}s`,
+            pointerEvents: present ? 'auto' : 'none',
+          }}
+        >
+          <ModuleSelector selectedNodeType={selectedNodeType} onSelect={handleModuleSelect} />
+        </MUIBox>
       </MUIBox>
     );
   },
   (prevProps, nextProps) =>
-    // Custom comparison to prevent unnecessary re-renders.
-    prevProps.nodes === nextProps.nodes && prevProps.selectedNodeType === nextProps.selectedNodeType,
+    // Custom comparison to prevent unnecessary re-renders. `present` MUST be
+    // compared too — it's App's single usePresence() instance threaded down
+    // as a prop, and it changes independently of nodes/selectedNodeType; if
+    // it were left out here, a present-state transition from App would be
+    // silently dropped by memo and the overlay would never fade.
+    prevProps.nodes === nextProps.nodes &&
+    prevProps.selectedNodeType === nextProps.selectedNodeType &&
+    prevProps.present === nextProps.present,
 );
 Physics3DCanvas.displayName = 'Physics3DCanvas';

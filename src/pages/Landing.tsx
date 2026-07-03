@@ -1,11 +1,15 @@
 import React from 'react';
 import { Box, Container, Button } from '@mui/material';
+import type { SessionSummary } from '../types/session';
+import { toRomanNumeral } from '../config/experience';
 
 interface LandingProps {
   onEnter: () => void;
+  /** Snapshot of the previous session (§4.2), null before the first visit. */
+  lastSession?: SessionSummary | null;
 }
 
-export const Landing: React.FC<LandingProps> = ({ onEnter }) => {
+export const Landing: React.FC<LandingProps> = ({ onEnter, lastSession }) => {
   return (
     <Box sx={{
       minHeight: '100vh',
@@ -138,6 +142,25 @@ export const Landing: React.FC<LandingProps> = ({ onEnter }) => {
           >
             ENTER THE SACRED
           </Button>
+
+          {/* Session summary (§4.2): a single quiet line, only when a
+              previous session exists. Deliberately understated — no numeric
+              HUD anywhere else in the app, just this one closing note. */}
+          {lastSession && (
+            <Box
+              component="p"
+              sx={{
+                mt: 3,
+                fontWeight: 300,
+                letterSpacing: '0.15em',
+                fontSize: '0.65rem',
+                color: '#888888',
+                textTransform: 'lowercase'
+              }}
+            >
+              {`last passage — ${lastSession.collisions} resonances · ${toRomanNumeral(lastSession.maxCombo)} chain · key of ${lastSession.keyName}`}
+            </Box>
+          )}
 
           {/* Module Symbols Showcase */}
           <Box sx={{ mt: 10, display: 'flex', justifyContent: 'center', gap: { xs: 2, md: 3 }, flexWrap: 'wrap' }}>

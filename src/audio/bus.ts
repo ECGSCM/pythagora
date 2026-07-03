@@ -41,6 +41,8 @@ export class AudioBus {
   private readonly compressor: Tone.Compressor;
   private readonly limiter: Tone.Limiter;
   private readonly masterVolume: Tone.Volume;
+  /** Sound-reactive UI tap (§4.4): analysis-only, does not feed Destination. */
+  private readonly meter: Tone.Meter;
 
   /** Single attach point for instrument voices (dry-ish path into the echo). */
   readonly input: Tone.Gain;
@@ -76,6 +78,15 @@ export class AudioBus {
     this.compressor.connect(this.limiter);
     this.limiter.connect(this.masterVolume);
     this.masterVolume.toDestination();
+
+    // Meter taps the signal AFTER masterVolume (post-mute-chain would be nicer
+    // but Tone.Destination.mute doesn't expose a tappable node); it fans out
+    // from masterVolume without joining the mute switch, so a muted mute-icon
+    // pulse is avoided instead by gating reads on `!isMuted` at the call site
+    // (ControlsOverlay). Smoothing 0.8 keeps the pulse a slow "breathing"
+    // signal rather than a jittery VU meter.
+    this.meter = new Tone.Meter({ smoothing: 0.8 });
+    this.masterVolume.connect(this.meter);
 
     // Reverb aux send: the convolver runs fully wet, `reverbSend` controls how
     // much dry signal is fed into it.
@@ -199,6 +210,18 @@ export class AudioBus {
     return this.masterVolume.volume.value;
   }
 
+  // ==================== METERING (§4.4) ====================
+
+  /**
+   * Current output level in dBFS (roughly -Infinity when silent .. 0 at full
+   * scale). Callers wanting a UI-friendly 0..1 value should normalize (see
+   * `AudioEngine.getOutputLevel`); this returns the raw Tone.Meter reading.
+   */
+  getLevel(): number {
+    const value = this.meter.getValue();
+    return typeof value === 'number' ? value : (value[0] ?? -Infinity);
+  }
+
   // ==================== LIFECYCLE ====================
 
   dispose(): void {
@@ -214,6 +237,7 @@ export class AudioBus {
       this.compressor,
       this.limiter,
       this.masterVolume,
+      this.meter,
     ]) {
       try {
         node.dispose();

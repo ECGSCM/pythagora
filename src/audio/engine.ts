@@ -9,6 +9,8 @@ import {
   BRIGHTNESS_MAX,
   BRIGHTNESS_MIN,
   HARMONY_STEP_INTERVAL,
+  MASTER_VOLUME_MAX_DB,
+  MASTER_VOLUME_MIN_DB,
   VELOCITY_GAIN_MAX,
   VELOCITY_GAIN_MIN,
   VELOCITY_OFFSET,
@@ -177,6 +179,24 @@ export class AudioEngine {
 
   getEchoMode(): EchoMode {
     return this.bus.getEchoMode();
+  }
+
+  /** Human-readable name of the current harmony key (§2.2), e.g. "G". */
+  getCurrentKeyName(): string {
+    return KEY_NAMES[this.harmony.getKeyIndex()];
+  }
+
+  /**
+   * Sound-reactive UI (§4.4): current output level normalized to 0..1,
+   * linearly mapping [MASTER_VOLUME_MIN_DB..MASTER_VOLUME_MAX_DB] (-60..0dB)
+   * onto [0..1]. True silence (-Infinity dB) maps to 0.
+   */
+  getOutputLevel(): number {
+    const db = this.bus.getLevel();
+    if (!Number.isFinite(db)) return 0;
+    const range = MASTER_VOLUME_MAX_DB - MASTER_VOLUME_MIN_DB;
+    const normalized = (db - MASTER_VOLUME_MIN_DB) / range;
+    return Math.max(0, Math.min(1, normalized));
   }
 
   dispose(): void {

@@ -14,7 +14,32 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { PatchNode } from './types/patch';
 import { CollisionEvent } from './types/events';
+import type { SessionSummary } from './types/session';
 import { DEMO_LAYOUT, getDefaultParams } from './config/world';
+import { PRESENCE } from './config/experience';
+import { usePresence } from './components/ui/usePresence';
+import { useGameStore } from './stores/gameStore';
+
+// Help card visibility persistence (§4.2): once the user dismisses it with H,
+// later app entries start with it hidden. Guarded against private-mode
+// storage failures — a broken localStorage must never crash the app.
+const HELP_SEEN_KEY = 'pythagora.helpSeen';
+
+function readHelpSeen(): boolean {
+  try {
+    return localStorage.getItem(HELP_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeHelpSeen(): void {
+  try {
+    localStorage.setItem(HELP_SEEN_KEY, '1');
+  } catch {
+    // Private mode / storage disabled — the card just re-shows next visit.
+  }
+}
 
 // Divine Monochrome Theme - Sacred minimalist design
 const divineTheme = createTheme({
@@ -102,14 +127,23 @@ function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [nodes, setNodes] = useState<PatchNode[]>([]);
   const [selectedModuleType, setSelectedModuleType] = useState<PatchNode['type']>('marble');
-  const [showHelp, setShowHelp] = useState(true);
+  // First visit: auto-shown. Once dismissed with H, later entries (even after
+  // a full reload) start hidden — see readHelpSeen/writeHelpSeen above.
+  const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
   const [notification, setNotification] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
+  const [lastSession, setLastSession] = useState<SessionSummary | null>(null);
+
+  // Presence (§4.1): a single hook instance, shared by the help card here and
+  // by Physics3DCanvas's own overlays (threaded down as a prop) so everything
+  // fades off one idle timer instead of each owning a separate one.
+  const present = usePresence();
 
   // Transition out of the landing page. Demo modules are seeded only on the
   // first entry — returning via ESC and re-entering must not clobber the
-  // user's layout.
+  // user's layout. A fresh session also means fresh gameplay stats (§4.2).
   const handleEnter = useCallback(() => {
     setShowLanding(false);
+    useGameStore.getState().reset();
 
     setNodes(prev => {
       if (prev.length > 0) return prev;
@@ -122,12 +156,17 @@ function App() {
     });
   }, []);
 
-  const handleExitToLanding = useCallback(() => {
+  const handleExitToLanding = useCallback((summary: SessionSummary) => {
+    setLastSession(summary);
     setShowLanding(true);
   }, []);
 
   const handleToggleHelp = useCallback(() => {
-    setShowHelp(prev => !prev);
+    setShowHelp(prev => {
+      const next = !prev;
+      if (!next) writeHelpSeen();
+      return next;
+    });
   }, []);
 
   // Handle adding new modules. Placement happens on the vertical z=0 plane,
@@ -179,7 +218,7 @@ function App() {
     return (
       <ThemeProvider theme={divineTheme}>
         <CssBaseline />
-        <Landing onEnter={handleEnter} />
+        <Landing onEnter={handleEnter} lastSession={lastSession} />
       </ThemeProvider>
     );
   }
@@ -209,10 +248,12 @@ function App() {
               onClearAll={handleClearAll}
               onToggleHelp={handleToggleHelp}
               onExit={handleExitToLanding}
+              present={present}
             />
           </ErrorBoundary>
 
-          {/* Floating Instructions (H toggles) */}
+          {/* Floating Instructions (H toggles). Presence (§4.1): fades with
+              the same shared idle timer as the canvas's own overlays. */}
           {showHelp && <Card sx={{
             position: 'absolute',
             bottom: 20,
@@ -220,7 +261,10 @@ function App() {
             maxWidth: 280,
             background: '#000000',
             backdropFilter: 'blur(10px)',
-            border: '1px solid #333333'
+            border: '1px solid #333333',
+            opacity: present ? 1 : 0,
+            transition: `opacity ${present ? PRESENCE.fadeInSec : PRESENCE.fadeOutSec}s`,
+            pointerEvents: present ? 'auto' : 'none'
           }}>
             <CardContent>
               <Typography variant="body2" sx={{
