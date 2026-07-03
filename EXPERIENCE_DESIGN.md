@@ -45,7 +45,7 @@
 ### 2.5 Binaural Mode(オプション)
 - UIトグル: L=220Hz / R=224Hz(4Hz Theta)、-38dB でドローンに混合。ヘッドフォン推奨の注記
 
-## 3. VISUAL — 最新GLエフェクトによる視覚的催眠(担当: Opus 実装 / Fable 設計・レビュー)
+## 3. VISUAL — WebGL ポストプロセッシングによる視覚的催眠(担当: Opus 実装 / Fable 設計・レビュー)
 
 ### 3.1 Postprocessing パイプライン(新規依存: `@react-three/postprocessing` + `postprocessing`)
 ```
