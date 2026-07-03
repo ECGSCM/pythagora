@@ -1,10 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Plane } from '@react-three/drei';
-import * as THREE from 'three';
 import type { PatchNode } from '../../types/patch';
 import type { CollisionEvent } from '../../types/events';
-import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA } from '../../config/world';
+import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA, clampPlacement } from '../../config/world';
 import { useGameStore } from '../../stores/gameStore';
 import { useLiveCallback } from './hooks';
 import { Ground } from './Ground';
@@ -13,6 +12,7 @@ import { Modules } from './Modules';
 import { Atmosphere } from './Atmosphere';
 import { Marble } from './Marble';
 import { Ripple } from './Ripple';
+import { GhostPreview, type PlacementPoint } from './GhostPreview';
 import {
   CompletionCelebration,
   ComboDisplay,
@@ -28,7 +28,6 @@ interface SceneProps {
   /** Live audio channel: Physics3DCanvas passes an inline that calls
    * engine.triggerCollision. (The old App-level no-op forward is gone.) */
   onCollision?: CollisionHandler;
-  selectedNodeType?: PatchNode['type'];
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
   divineLightActive: boolean;
   marbleDropTrigger: number;
@@ -39,7 +38,7 @@ interface SceneProps {
 // collision re-renders only the hit module's flash (self-subscribed) and the
 // display components, never the whole scene (REFACTORING_PLAN.md §0.5 P1/P2).
 export const Scene = React.memo(
-  ({ nodes, onCollision, selectedNodeType, onNodeAdd, divineLightActive, marbleDropTrigger, followCamera }: SceneProps) => {
+  ({ nodes, onCollision, onNodeAdd, divineLightActive, marbleDropTrigger, followCamera }: SceneProps) => {
     // Marbles + ripples stay in React state — they map to mounted components.
     const [marbles, setMarbles] = useState<MarbleState[]>([]);
     // Ids of marbles being evicted by the spawn cap: they're routed through the
@@ -95,16 +94,50 @@ export const Scene = React.memo(
       }
     });
 
+    // Ghost preview state (COMMERCIAL_GRADE_PLAN.md §7C): both refs are
+    // written imperatively (never via setState) so hovering/placing never
+    // re-renders Scene. pointerRef tracks the live (clamped) hover position;
+    // pulseRef records the point of the last successful placement so the
+    // ghost can pulse there instead of jumping to wherever the pointer has
+    // since moved.
+    const pointerRef = useRef<PlacementPoint | null>(null);
+    const pulseRef = useRef<PlacementPoint | null>(null);
+
+    const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
+      const { x, y } = clampPlacement(e.point.x, e.point.y);
+      // Marble clicks get an extra floor beyond the shared clamp (below); the
+      // hover preview mirrors it so it never shows the marble sinking under
+      // where it will actually spawn.
+      const selected = useGameStore.getState().selectedModuleType;
+      const previewY = selected === 'marble' ? Math.max(y, MARBLE.spawnClickMinY) : y;
+      pointerRef.current = { x, y: previewY, t: Date.now() };
+    };
+
+    const handlePointerLeave = () => {
+      pointerRef.current = null;
+    };
+
     // Clicks on the vertical z=0 placement plane map directly to world x/y
-    // (REFACTORING_PLAN.md P7); clamp into the play area.
+    // (REFACTORING_PLAN.md P7); clamp into the play area via the same
+    // clampPlacement helper the ghost preview uses, so what you saw is what
+    // you get (diagnosis #2 "edge-clamp placements appear far from the
+    // click").
     const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
-      const x = THREE.MathUtils.clamp(e.point.x, -PLACEMENT.clampX, PLACEMENT.clampX);
-      const y = THREE.MathUtils.clamp(e.point.y, PLACEMENT.clampYMin, PLACEMENT.clampYMax);
-      if (selectedNodeType === 'marble') {
-        addMarble([x, Math.max(y, MARBLE.spawnClickMinY), 0]);
+      const { x, y } = clampPlacement(e.point.x, e.point.y);
+      // Read the selection at event time — NOT from a prop. A prop can still
+      // hold the previous render's value when a keyboard selection and an
+      // immediate click land in the same tick; the store is the single
+      // source of truth and this is always its latest value
+      // (COMMERCIAL_GRADE_PLAN.md §7C "selection race", verified root cause).
+      const selected = useGameStore.getState().selectedModuleType;
+      if (selected === 'marble') {
+        const spawnY = Math.max(y, MARBLE.spawnClickMinY);
+        addMarble([x, spawnY, 0]);
+        pulseRef.current = { x, y: spawnY, t: Date.now() };
       } else {
         onNodeAdd?.({ x, y, z: 0 });
+        pulseRef.current = { x, y, t: Date.now() };
       }
     };
 
@@ -195,8 +228,14 @@ export const Scene = React.memo(
           args={PLACEMENT.planeArgs}
           position={PLACEMENT.planePosition}
           onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={handlePointerLeave}
           visible={false}
         />
+
+        {/* Translucent preview of the selected module at the clamped
+            placement position — see GhostPreview for the pulse/hide logic. */}
+        <GhostPreview pointerRef={pointerRef} pulseRef={pulseRef} />
 
         <Modules nodes={nodes} />
 

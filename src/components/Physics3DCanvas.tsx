@@ -255,7 +255,6 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
                   // The engine resumes its own context internally on first hit.
                   engine?.triggerCollision(event);
                 }}
-                selectedNodeType={selectedNodeType}
                 onNodeAdd={onNodeAdd}
                 divineLightActive={divineLightActive}
                 marbleDropTrigger={marbleDropTrigger}

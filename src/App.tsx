@@ -125,7 +125,12 @@ const divineTheme = createTheme({
 function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [nodes, setNodes] = useState<PatchNode[]>([]);
-  const [selectedModuleType, setSelectedModuleType] = useState<PatchNode['type']>('marble');
+  // Selection lives in the zustand store now, not local state (§7C "selection
+  // race" fix): Scene's placement handler reads it via getState() at click
+  // time, so App and Scene can never disagree about what's currently armed.
+  // App just subscribes to the same slice for its own render (ModuleSelector
+  // highlight, handleModuleAdd).
+  const selectedModuleType = useGameStore((state) => state.selectedModuleType);
   // First visit: auto-shown. Once dismissed with H, later entries (even after
   // a full reload) start hidden — see readHelpSeen/writeHelpSeen above.
   const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
@@ -171,14 +176,21 @@ function App() {
   // Handle adding new modules. Placement happens on the vertical z=0 plane,
   // so the click's x/y map directly to the module position (the old code
   // folded the raycast z-depth into y — see REFACTORING_PLAN.md P7).
+  //
+  // Reads the type from the store's getState() rather than the
+  // `selectedModuleType` render-time closure above: Scene calls this
+  // synchronously from its r3f pointer handler, which can fire before App has
+  // re-rendered off a same-tick store update — closing over the reactive hook
+  // value here would reopen the exact selection race §7C fixes in Scene.
   const handleModuleAdd = useCallback((position: { x: number; y: number; z?: number }) => {
-    if (selectedModuleType === 'marble') return; // Marbles are handled directly by the canvas
+    const type = useGameStore.getState().selectedModuleType;
+    if (type === 'marble') return; // Marbles are handled directly by the canvas
 
     const newModule: PatchNode = {
-      id: `${selectedModuleType}-${Date.now()}`,
-      type: selectedModuleType,
+      id: `${type}-${Date.now()}`,
+      type,
       position: { x: position.x, y: position.y },
-      params: getDefaultParams(selectedModuleType)
+      params: getDefaultParams(type)
     };
 
     setNodes(prev => [...prev, newModule]);
@@ -187,20 +199,25 @@ function App() {
       message: `Module added`,
       severity: 'success'
     });
-  }, [selectedModuleType]);
+  }, []);
 
-  // Handle module type selection
+  // Handle module type selection. Written synchronously to the store (not a
+  // local setState) so keyboard 1-8 and ModuleSelector clicks both commit the
+  // new selection before the next event (e.g. an immediate click) can read it.
   const handleSelectionChange = useCallback((moduleType: PatchNode['type']) => {
-    setSelectedModuleType(moduleType);
+    useGameStore.getState().setSelectedModuleType(moduleType);
     setNotification({
       message: `Selected: ${moduleType.toUpperCase()}`,
       severity: 'info'
     });
   }, []);
 
-  // Clear all modules (C key / canvas callback).
+  // Clear all modules (C key / canvas callback). Also drops any moduleHits
+  // flash timestamps for the removed nodes, so the record doesn't keep
+  // entries for modules that no longer exist (§7C moduleHits hygiene).
   const handleClearAll = useCallback(() => {
     setNodes([]);
+    useGameStore.getState().clearModuleHits();
     setNotification({
       message: 'All modules cleared',
       severity: 'info'

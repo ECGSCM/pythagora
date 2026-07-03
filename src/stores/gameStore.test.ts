@@ -169,4 +169,73 @@ describe('gameStore completion + reset', () => {
     expect(s.completionCelebration).toEqual({ enabled: false, marblesCompleted: 0 });
     expect(s.moduleHits).toEqual({});
   });
+
+  it('reset does not touch the selected module type (a UI preference, not gameplay state)', () => {
+    useGameStore.getState().setSelectedModuleType('bumper');
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().selectedModuleType).toBe('bumper');
+  });
+});
+
+describe('gameStore.selectedModuleType (§7C selection race fix)', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+    useGameStore.getState().setSelectedModuleType('marble');
+  });
+
+  it('defaults to marble', () => {
+    expect(useGameStore.getState().selectedModuleType).toBe('marble');
+  });
+
+  it('setSelectedModuleType commits synchronously, so a getState() read right after sees the new value', () => {
+    useGameStore.getState().setSelectedModuleType('spinner');
+    // No await/tick advance — this is the exact "press 5, then click in the
+    // same tick" scenario Scene's pointer handler must see correctly.
+    expect(useGameStore.getState().selectedModuleType).toBe('spinner');
+  });
+});
+
+describe('gameStore.clearModuleHits', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    useGameStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('empties the moduleHits record', () => {
+    useGameStore.getState().registerCollision(hit('bumper-1'));
+    expect(useGameStore.getState().moduleHits).not.toEqual({});
+    useGameStore.getState().clearModuleHits();
+    expect(useGameStore.getState().moduleHits).toEqual({});
+  });
+});
+
+describe('gameStore.registerCollision moduleHits cap', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    useGameStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('drops the oldest half once the record passes 64 distinct modules', () => {
+    for (let i = 0; i < 70; i++) {
+      useGameStore.getState().registerCollision(hit(`module-${i}`));
+    }
+    const { moduleHits } = useGameStore.getState();
+    const keys = Object.keys(moduleHits);
+    // 70 hits -> cap trips once size exceeds 64, dropping the oldest half
+    // repeatedly; the record must never be allowed to grow unbounded, and the
+    // most-recently-hit module must always survive.
+    expect(keys.length).toBeLessThanOrEqual(64);
+    expect(moduleHits['module-69']).toBeDefined();
+    expect(moduleHits['module-0']).toBeUndefined();
+  });
 });

@@ -246,6 +246,20 @@ export const PLACEMENT = {
   planePosition: [0, 12, 0] as Vec3,
 } as const;
 
+/**
+ * Clamp a raw placement-plane hit point into the playable bounds. Shared by
+ * Scene's pointer-down handler and GhostPreview so the hover preview and the
+ * actual placement can never disagree about where a module will land — a
+ * click near a viewport edge used to snap the module far from the cursor with
+ * zero visual warning (COMMERCIAL_GRADE_PLAN.md §7C, diagnosis #2).
+ */
+export function clampPlacement(x: number, y: number): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(x, -PLACEMENT.clampX), PLACEMENT.clampX),
+    y: Math.min(Math.max(y, PLACEMENT.clampYMin), PLACEMENT.clampYMax),
+  };
+}
+
 // ==================== CAMERA / LIGHTS ====================
 
 export const CAMERA = {

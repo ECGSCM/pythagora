@@ -13,7 +13,11 @@
 
 import { create } from 'zustand';
 import type { CollisionEvent } from '../types/events';
+import type { PatchNode } from '../types/patch';
 import { GAMEPLAY, calculateMultiplier } from '../config/world';
+
+/** A moduleHits record past this many keys gets trimmed (see registerCollision). */
+const MODULE_HITS_CAP = 64;
 
 export interface ComboState {
   count: number;
@@ -68,6 +72,14 @@ interface GameState {
   modulation: ModulationState | null;
   /** Timestamp of the most recent marble hit per module id — drives hit flash. */
   moduleHits: Record<string, number>;
+  /**
+   * Single source of truth for the currently-selected placement type
+   * (keyboard 1-8 / ModuleSelector). Scene's pointer-down handler reads this
+   * via `useGameStore.getState()` at click time — not from a React prop — so
+   * a same-tick "press 5, then click" can never place the stale selection
+   * (COMMERCIAL_GRADE_PLAN.md §7C "selection race").
+   */
+  selectedModuleType: PatchNode['type'];
 
   /** Port of Scene.handleCollision's combo/unlock/stats/perfect-run update. */
   registerCollision: (event: CollisionEvent) => void;
@@ -79,6 +91,14 @@ interface GameState {
   clearCelebration: () => void;
   /** Reset all gameplay state (and cancel the pending combo-reset timer). */
   reset: () => void;
+  /** Change the selected placement type (keyboard shortcut or ModuleSelector click). */
+  setSelectedModuleType: (type: PatchNode['type']) => void;
+  /**
+   * Drop all module-hit flash timestamps. Called on Clear All (and would be
+   * called on any future per-node removal) so the record doesn't keep
+   * flash entries for modules that no longer exist in the scene.
+   */
+  clearModuleHits: () => void;
 }
 
 const initialCombo = (): ComboState => ({ count: 0, multiplier: 1, lastCollisionTime: 0 });
@@ -125,6 +145,7 @@ export const useGameStore = create<GameState>((set, get) => {
     completionCelebration: initialCelebration(),
     modulation: null,
     moduleHits: {},
+    selectedModuleType: 'marble',
 
     setModulation: (index, name) => {
       set({ modulation: { index, name, at: Date.now() } });
@@ -141,10 +162,20 @@ export const useGameStore = create<GameState>((set, get) => {
       // collision fires exactly one store notification (the old code fanned
       // out up to 8 set() calls per hit). Behaviour is unchanged — only the
       // notification count differs.
-      const updates: Partial<GameState> = {
-        // Flash the struck module (P11).
-        moduleHits: { ...moduleHits, [event.nodeId]: event.timestamp },
-      };
+      // Flash the struck module (P11).
+      const nextHits: Record<string, number> = { ...moduleHits, [event.nodeId]: event.timestamp };
+      // Unbounded growth guard (diagnosis #4): a long session hits one entry
+      // per distinct module ever struck. Object.keys on a plain object with
+      // string keys preserves insertion order, so once the record passes the
+      // cap, dropping the oldest half keeps it bounded while still retaining
+      // every module that could plausibly still be mid-flash.
+      if (Object.keys(nextHits).length > MODULE_HITS_CAP) {
+        const keys = Object.keys(nextHits);
+        const dropCount = Math.floor(keys.length / 2);
+        for (let i = 0; i < dropCount; i++) delete nextHits[keys[i]];
+      }
+
+      const updates: Partial<GameState> = { moduleHits: nextHits };
 
       if (timeSinceLastCollision < GAMEPLAY.comboTimeoutMs) {
         // Continue combo.
@@ -265,7 +296,15 @@ export const useGameStore = create<GameState>((set, get) => {
         completionCelebration: initialCelebration(),
         modulation: null,
         moduleHits: {},
+        // selectedModuleType deliberately survives reset(): it's a UI
+        // preference (what's currently armed for placement), not gameplay
+        // state, and the old App-level `useState` never reset it either when
+        // re-entering from the landing page.
       });
     },
+
+    setSelectedModuleType: (type) => set({ selectedModuleType: type }),
+
+    clearModuleHits: () => set({ moduleHits: {} }),
   };
 });
