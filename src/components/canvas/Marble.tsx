@@ -71,6 +71,14 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
     };
   }, [id]);
 
+  // Subscriptions are stored in a ref and torn down EARLY (at ascension start,
+  // not unmount): the physics worker resolves subscription targets by body id
+  // each step, and unmount removes the body via a layout effect that can run
+  // before this effect's cleanup — a race that intermittently threw
+  // "Cannot read properties of undefined (reading 'velocity')" inside the
+  // cannon worker. Ending the subscriptions a full second before the body is
+  // removed closes that window regardless of React's cleanup ordering.
+  const unsubscribeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const unsubPos = api.position.subscribe((pos) => {
       marblePosition.current.set(pos[0], pos[1], pos[2]);
@@ -78,9 +86,13 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
     const unsubVel = api.velocity.subscribe((vel) => {
       marbleSpeed.current = Math.hypot(vel[0], vel[1], vel[2]);
     });
-    return () => {
+    unsubscribeRef.current = () => {
       unsubPos();
       unsubVel();
+    };
+    return () => {
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
     };
   }, [api.position, api.velocity]);
 
@@ -88,6 +100,9 @@ export const Marble = React.memo(({ id, position, onCollide, onSettle }: MarbleP
     settling.current = true;
     settleElapsed.current = 0;
     settlePos.copy(marblePosition.current);
+    // The run is over: stop observing the body now (see unsubscribeRef note).
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
     // Stop interacting with the world during the fade: the body no longer
     // pushes anything (collisionResponse off) and is frozen in place.
     api.collisionResponse.set(false);
