@@ -14,6 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { PatchNode } from './types/patch';
 import { CollisionEvent } from './types/events';
+import { DEMO_LAYOUT, getDefaultParams } from './config/world';
 
 // Divine Monochrome Theme - Sacred minimalist design
 const divineTheme = createTheme({
@@ -112,35 +113,7 @@ function App() {
 
     setNodes(prev => {
       if (prev.length > 0) return prev;
-      const demoModules: PatchNode[] = [
-        {
-          id: 'ramp-demo-1',
-          type: 'ramp',
-          // Negative angle slopes down toward +x, sending marbles across
-          // the bumper/chime/bell chain to the right.
-          position: { x: -5, y: 8 },
-          params: { angle: -20 }
-        },
-        {
-          id: 'bumper-demo-1',
-          type: 'bumper',
-          position: { x: 0, y: 5 },
-          params: { pitch: 'C4' }
-        },
-        {
-          id: 'chime-demo-1',
-          type: 'chime',
-          position: { x: 3, y: 3 },
-          params: { note: 'E4' }
-        },
-        {
-          id: 'bell-demo-1',
-          type: 'bell',
-          position: { x: 6, y: 1 },
-          params: { frequency: 528 }
-        }
-      ];
-      return demoModules;
+      return DEMO_LAYOUT;
     });
 
     setNotification({
@@ -298,27 +271,6 @@ function App() {
       </Box>
     </ThemeProvider>
   );
-}
-
-function getDefaultParams(moduleType: PatchNode['type']): Record<string, string | number | string[]> {
-  switch (moduleType) {
-    case 'ramp':
-      return { angle: 15, material: 'wood' };
-    case 'bumper':
-      return { pitch: 'C4', resonance: 0.8 };
-    case 'chime':
-      return { note: 'A4', decay: 2.0 };
-    case 'spinner':
-      return { speed: 1.0, notes: ['C4', 'E4', 'G4'] };
-    case 'funnel':
-      return { effect: 'spiral', intensity: 0.7 };
-    case 'seesaw':
-      return { balance: 0.5, sensitivity: 1.0 };
-    case 'bell':
-      return { frequency: 440, harmonics: 3 };
-    default:
-      return {};
-  }
 }
 
 export default App;

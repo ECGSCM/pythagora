@@ -1,0 +1,192 @@
+import React, { useRef, useState } from 'react';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { OrbitControls, ContactShadows, PerspectiveCamera, Plane } from '@react-three/drei';
+import * as THREE from 'three';
+import type { PatchNode } from '../../types/patch';
+import type { CollisionEvent } from '../../types/events';
+import { MARBLE, GAMEPLAY, PLACEMENT, CAMERA, CONTACT_SHADOWS } from '../../config/world';
+import { useGameStore } from '../../stores/gameStore';
+import { useLiveCallback } from './hooks';
+import { Ground } from './Ground';
+import { Lights } from './Lights';
+import { Modules } from './Modules';
+import { Atmosphere } from './Atmosphere';
+import { Marble } from './Marble';
+import { Ripple } from './Ripple';
+import { CompletionCelebration } from './effects';
+import type { CollisionHandler, MarbleState, Vec3 } from './types';
+
+interface SceneProps {
+  nodes: PatchNode[];
+  onCollision?: CollisionHandler;
+  selectedNodeType?: PatchNode['type'];
+  onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
+  divineLightActive: boolean;
+  marbleDropTrigger: number;
+}
+
+// Scene — composition only. All gameplay state lives in the zustand store, so a
+// collision re-renders only the hit module's flash (self-subscribed) and the
+// display components, never the whole scene (REFACTORING_PLAN.md §0.5 P1/P2).
+export const Scene = React.memo(
+  ({ nodes, onCollision, selectedNodeType, onNodeAdd, divineLightActive, marbleDropTrigger }: SceneProps) => {
+    // Marbles + ripples stay in React state — they map to mounted components.
+    const [marbles, setMarbles] = useState<MarbleState[]>([]);
+    const [ripples, setRipples] = useState<Array<{ id: string; position: Vec3; color: string }>>([]);
+
+    const addMarble = (position: Vec3) => {
+      const newMarble: MarbleState = {
+        id: `marble-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        position,
+      };
+      // Cap enforced at spawn time; settled marbles are removed by onSettle.
+      setMarbles((prev) => [...prev, newMarble].slice(-MARBLE.spawnCap));
+    };
+
+    // Space-key marble drops are processed in the frame loop (not an effect) so
+    // state updates happen outside render.
+    const processedDropTrigger = useRef(0);
+    useFrame(() => {
+      if (marbleDropTrigger > processedDropTrigger.current) {
+        processedDropTrigger.current = marbleDropTrigger;
+        const x = (Math.random() - 0.5) * MARBLE.spawnSpreadX;
+        addMarble([x, MARBLE.spawnHeight, 0]);
+      }
+    });
+
+    // Clicks on the vertical z=0 placement plane map directly to world x/y
+    // (REFACTORING_PLAN.md P7); clamp into the play area.
+    const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      const x = THREE.MathUtils.clamp(e.point.x, -PLACEMENT.clampX, PLACEMENT.clampX);
+      const y = THREE.MathUtils.clamp(e.point.y, PLACEMENT.clampYMin, PLACEMENT.clampYMax);
+      if (selectedNodeType === 'marble') {
+        addMarble([x, Math.max(y, MARBLE.spawnClickMinY), 0]);
+      } else {
+        onNodeAdd?.({ x, y, z: 0 });
+      }
+    };
+
+    // Per-module collision gate: sustained contact fires cannon collide events
+    // every physics step; without a cooldown a resting marble machine-guns
+    // sound/combo/ripples (REFACTORING_PLAN.md P5).
+    const collisionGateRef = useRef<Map<string, number>>(new Map());
+
+    // Stable so <Marble> memoization holds across ripple/marble state changes.
+    const handleCollision = useLiveCallback((event: CollisionEvent) => {
+      if (event.velocity < GAMEPLAY.minImpactVelocity) return;
+      const lastHit = collisionGateRef.current.get(event.nodeId) ?? 0;
+      if (event.timestamp - lastHit < GAMEPLAY.collisionCooldownMs) return;
+      collisionGateRef.current.set(event.nodeId, event.timestamp);
+
+      // Snapshot combo/unlock state BEFORE the store update, so ripple color
+      // uses the pre-hit values (matches the old async-setState semantics).
+      const { combo, unlocks, registerCollision } = useGameStore.getState();
+      const preMultiplier = combo.multiplier;
+      const preCount = combo.count;
+
+      // Combo/unlock/stats/perfect-run/module-flash all live in the store now.
+      registerCollision(event);
+
+      // Trigger audio.
+      onCollision?.(event);
+
+      // Ripple color based on the pre-hit multiplier/unlocks.
+      let rippleColor: string;
+      if (unlocks.goldenMode && preMultiplier >= 5) {
+        rippleColor = GAMEPLAY.rippleGoldenColor;
+      } else if (unlocks.rainbowRipples && preMultiplier >= 4) {
+        const rainbow = GAMEPLAY.rippleRainbowColors;
+        rippleColor = rainbow[preCount % rainbow.length];
+      } else {
+        rippleColor = GAMEPLAY.rippleStandardColors[Math.min(preMultiplier - 1, 4)];
+      }
+
+      const rippleId = `ripple-${Date.now()}-${Math.random()}`;
+      setRipples((prev) =>
+        [
+          ...prev,
+          {
+            id: rippleId,
+            position: [event.position.x, event.position.y + 0.1, event.position.z] as Vec3,
+            color: rippleColor,
+          },
+        ].slice(-GAMEPLAY.rippleCap),
+      );
+    });
+
+    const handleRippleComplete = (rippleId: string) => {
+      setRipples((prev) => prev.filter((r) => r.id !== rippleId));
+    };
+
+    // A marble reports itself done (rest / fell out) — remove it and celebrate.
+    const handleMarbleSettle = useLiveCallback((id: string) => {
+      setMarbles((prev) => (prev.some((m) => m.id === id) ? prev.filter((m) => m.id !== id) : prev));
+      useGameStore.getState().marbleCompleted();
+    });
+
+    return (
+      <>
+        <PerspectiveCamera makeDefault position={CAMERA.position} fov={CAMERA.fov} />
+        <OrbitControls
+          enablePan
+          enableZoom
+          enableRotate
+          minDistance={CAMERA.orbit.minDistance}
+          maxDistance={CAMERA.orbit.maxDistance}
+          maxPolarAngle={CAMERA.orbit.maxPolarAngle}
+          target={CAMERA.orbit.target}
+        />
+
+        <Lights divineLightActive={divineLightActive} />
+
+        <Ground />
+
+        <ContactShadows
+          position={CONTACT_SHADOWS.position}
+          opacity={CONTACT_SHADOWS.opacity}
+          scale={CONTACT_SHADOWS.scale}
+          blur={CONTACT_SHADOWS.blur}
+          far={CONTACT_SHADOWS.far}
+          width={CONTACT_SHADOWS.width}
+          height={CONTACT_SHADOWS.height}
+          resolution={CONTACT_SHADOWS.resolution}
+        />
+
+        {/* Invisible interaction plane on the z=0 gameplay plane. */}
+        <Plane
+          args={PLACEMENT.planeArgs}
+          position={PLACEMENT.planePosition}
+          onPointerDown={handlePointerDown}
+          visible={false}
+        />
+
+        <Modules nodes={nodes} />
+
+        {marbles.map((marble) => (
+          <Marble
+            key={marble.id}
+            id={marble.id}
+            position={marble.position}
+            onCollide={handleCollision}
+            onSettle={handleMarbleSettle}
+          />
+        ))}
+
+        {ripples.map((ripple) => (
+          <Ripple
+            key={ripple.id}
+            position={ripple.position}
+            color={ripple.color}
+            onComplete={() => handleRippleComplete(ripple.id)}
+          />
+        ))}
+
+        <CompletionCelebration />
+
+        <Atmosphere />
+      </>
+    );
+  },
+);
+Scene.displayName = 'Scene';
