@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
-import { PatchNode } from '../types/db.types';
-import { CollisionEvent } from './physics';
+import { PatchNode } from '../types/patch';
+import { CollisionEvent } from '../types/events';
 
 export interface AudioConnection {
   from: string;
@@ -11,7 +11,7 @@ export interface AudioConnection {
 // Type definitions for audio nodes
 type AudioNode = Tone.Oscillator | Tone.Noise | Tone.Filter | Tone.LFO |
   Tone.Reverb | Tone.Delay | Tone.BitCrusher | Tone.Chorus |
-  Tone.Volume | Tone.Gain | Tone.Synth | Tone.PolySynth | Tone.MetalSynth |
+  Tone.Volume | Tone.Gain | Tone.Synth | Tone.MetalSynth |
   Tone.AmplitudeEnvelope | Tone.FrequencyEnvelope | Tone.PingPongDelay;
 
 interface NodeParameter {
@@ -181,7 +181,7 @@ export class AudioEngine {
       // Start reverb decay monitoring loop
       this.startReverbMonitoring();
     } catch (error) {
-      throw new Error(`Failed to initialize AudioEngine: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to initialize AudioEngine: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -358,7 +358,7 @@ export class AudioEngine {
         voice.osc.frequency.setValueAtTime(freq, now);
         voice.gain.gain.setValueAtTime(index === 0 ? -6 : -9, now);
         voice.env.triggerAttackRelease(duration, now);
-      } catch (e) {
+      } catch {
         // Ignore errors during voice reuse
       }
     });
@@ -486,7 +486,7 @@ export class AudioEngine {
       await Tone.start();
       this.isStarted = true;
     } catch (error) {
-      throw new Error(`Failed to start AudioEngine: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to start AudioEngine: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -532,7 +532,7 @@ export class AudioEngine {
           break;
 
         // Original synth modules
-        case 'osc':
+        case 'osc': {
           const solfeggioFreqs = [396, 417, 528, 639];
           const defaultFreq = solfeggioFreqs[Math.floor(Math.random() * solfeggioFreqs.length)];
 
@@ -542,6 +542,7 @@ export class AudioEngine {
             volume: patchNode.params.volume || -25
           });
           break;
+        }
 
         case 'filter':
           audioNode = new Tone.Filter({
@@ -591,7 +592,7 @@ export class AudioEngine {
       this.nodes.set(patchNode.id, audioNode);
       return audioNode;
     } catch (error) {
-      throw new Error(`Failed to create node ${patchNode.id}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to create node ${patchNode.id}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -920,7 +921,7 @@ export class AudioEngine {
       } catch (error) {
         // Log error but continue cleanup
         const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to remove node ${nodeId}: ${errorMessage}`);
+        throw new Error(`Failed to remove node ${nodeId}: ${errorMessage}`, { cause: error });
       }
     }
   }
@@ -947,7 +948,7 @@ export class AudioEngine {
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Audio connection failed from ${fromId} to ${toId}: ${errorMessage}`);
+      throw new Error(`Audio connection failed from ${fromId} to ${toId}: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -963,7 +964,7 @@ export class AudioEngine {
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`Audio disconnect failed from ${fromId} to ${toId}: ${errorMessage}`);
+        throw new Error(`Audio disconnect failed from ${fromId} to ${toId}: ${errorMessage}`, { cause: error });
       }
     }
   }
@@ -982,6 +983,10 @@ export class AudioEngine {
 
       // ADVANCE HARMONIC PROGRESSION DISABLED - Key changes during combos removed
       // this.advanceHarmony(event.nodeId);
+      // Phase 3 asset — the harmony system (advanceHarmony/playHarmonicChord)
+      // is reactivated when the audio engine is rebuilt (REFACTORING_PLAN.md
+      // Phase 3 / §0.6). Referenced here only to satisfy noUnusedLocals.
+      void this.advanceHarmony;
 
       // Handle different module types
       if (event.nodeId.includes('bumper')) {
@@ -1004,7 +1009,7 @@ export class AudioEngine {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to trigger collision for node ${event.nodeId}: ${errorMessage}`);
+      throw new Error(`Failed to trigger collision for node ${event.nodeId}: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -1075,7 +1080,7 @@ export class AudioEngine {
         env.dispose();
         gain.dispose();
         this.temporaryNodes.delete('drum');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 2500);
@@ -1141,7 +1146,7 @@ export class AudioEngine {
         env.dispose();
         masterGain.dispose();
         this.temporaryNodes.delete('chime');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 3500); // Reduced from 9000ms
@@ -1206,7 +1211,7 @@ export class AudioEngine {
         env.dispose();
         gain.dispose();
         this.temporaryNodes.delete('bell');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 5000); // Reduced from 12000ms
@@ -1288,7 +1293,7 @@ export class AudioEngine {
         env.dispose();
         masterGain.dispose();
         this.temporaryNodes.delete('spinner');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 4000); // Reduced from 6000ms
@@ -1435,7 +1440,7 @@ export class AudioEngine {
         metalGain2.dispose();
         metalGain3.dispose();
         this.temporaryNodes.delete('ramp');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 7000); // 7 seconds for full decay
@@ -1494,7 +1499,7 @@ export class AudioEngine {
         oscillators.forEach(o => o.dispose());
         masterGain.dispose();
         this.temporaryNodes.delete('funnel');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 2000);
@@ -1557,7 +1562,7 @@ export class AudioEngine {
         env.dispose();
         gain.dispose();
         this.temporaryNodes.delete('seesaw');
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }, 1500);
@@ -1585,7 +1590,7 @@ export class AudioEngine {
       try {
         synth.dispose();
         this.temporaryNodes.delete('default');
-      } catch (error) {
+      } catch {
         // Silently handle disposal errors
       }
     }, 1000);
@@ -1610,7 +1615,7 @@ export class AudioEngine {
         }
       }
     } catch (error) {
-      throw new Error(`Failed to update parameter ${param} for node ${nodeId}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to update parameter ${param} for node ${nodeId}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -1620,7 +1625,7 @@ export class AudioEngine {
       const clampedVolume = Math.max(-60, Math.min(0, volume));
       this.masterVolume.volume.value = clampedVolume;
     } catch (error) {
-      throw new Error(`Failed to set master volume: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to set master volume: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -1668,7 +1673,7 @@ export class AudioEngine {
               node.stop();
             }
             node.dispose();
-          } catch (error) {
+          } catch {
             // Silently handle disposal errors
           }
         });
@@ -1685,7 +1690,7 @@ export class AudioEngine {
             node.stop();
           }
           node.dispose();
-        } catch (error) {
+        } catch {
           // Silently handle disposal errors
         }
       });
@@ -1702,7 +1707,7 @@ export class AudioEngine {
 
       this.isStarted = false;
     } catch (error) {
-      throw new Error(`Failed to destroy AudioEngine: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to destroy AudioEngine: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -1719,7 +1724,7 @@ export class AudioEngine {
     try {
       this.glitchProcessor.bits.value = Math.floor(16 - (intensity * 12));
     } catch (error) {
-      throw new Error(`Failed to create glitch effect: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to create glitch effect: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -1729,7 +1734,7 @@ export class AudioEngine {
       // Note: Tone.js Reverb doesn't have roomSize parameter
       this.ambientReverb.decay = decay;
     } catch (error) {
-      throw new Error(`Failed to set ambient space: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to set ambient space: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
 
@@ -1755,7 +1760,7 @@ export class AudioEngine {
             node.stop();
           }
           node.dispose();
-        } catch (error) {
+        } catch {
           // Silently handle disposal errors
         }
       });

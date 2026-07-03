@@ -1,8 +1,7 @@
-import React, { useRef, useEffect, useState, Suspense, useMemo } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef, useEffect, useState, Suspense } from 'react';
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import {
   OrbitControls,
-  Environment,
   Box,
   Sphere,
   Cylinder,
@@ -13,19 +12,41 @@ import {
   Plane
 } from '@react-three/drei';
 import { Physics, useSphere, useBox, useCylinder, usePlane } from '@react-three/cannon';
-import { SynthBridge3D } from '../engines/synthBridge3D';
-import { PatchNode } from '../types/db.types';
+import { SynthBridge3D, type Collision3DEvent } from '../engines/synthBridge3D';
+import { PatchNode } from '../types/patch';
 import { Box as MUIBox, IconButton, Tooltip, Typography } from '@mui/material';
-import { VolumeUp, VolumeOff, GraphicEq, AccessTime } from '@mui/icons-material';
 import * as THREE from 'three';
+
+// Shared module/geometry types used throughout this file.
+type Vec3 = [number, number, number];
+type ModuleParams = PatchNode['params'];
+type CollisionHandler = (event: Collision3DEvent) => void;
+
+interface SessionStats {
+  totalCollisions: number;
+  maxCombo: number;
+  totalScore: number;
+}
+
+interface UnlocksState {
+  enhancedParticles: boolean;
+  goldenMarble: boolean;
+  rainbowRipples: boolean;
+  goldenMode: boolean;
+}
+
+interface MarbleState {
+  id: string;
+  position: Vec3;
+  completed?: boolean;
+}
 
 interface Physics3DCanvasProps {
   nodes: PatchNode[];
   onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
-  onCollision?: (event: any) => void;
-  onSelectionChange?: (nodeId: string | null) => void;
-  onModuleTypeChange?: (moduleType: string) => void;
-  selectedNodeType?: string;
+  onCollision?: CollisionHandler;
+  onModuleTypeChange?: (moduleType: PatchNode['type']) => void;
+  selectedNodeType?: PatchNode['type'];
 }
 
 // Ripple Effect Component for collisions
@@ -40,9 +61,6 @@ const Ripple = React.memo(({ position, color = "#FF4757", onComplete }: RipplePr
   const [life, setLife] = useState(1);
   const rippleDuration = 1.0;
   const completedRef = useRef(false);
-
-  // Memoized geometry and material for performance
-  const geometry = useMemo(() => new THREE.RingGeometry(0.1, 0.3, 16), []); // Reduced from 32 to 16
 
   useFrame((_state, delta) => {
     const decay = delta / rippleDuration;
@@ -130,7 +148,7 @@ const ComboDisplay = React.memo(({ show, text, scale, comboCount, multiplier }: 
 ComboDisplay.displayName = 'ComboDisplay';
 
 // Camera Flow Component - Smooth camera follow with floating motion
-const CameraFlow = React.memo(({ marbles }: { marbles: any[] }) => {
+const CameraFlow = React.memo(({ marbles }: { marbles: MarbleState[] }) => {
   const { camera } = useThree();
   const [offset] = useState(new THREE.Vector3(0, 8, 12)); // Camera offset from target
 
@@ -399,9 +417,15 @@ const ParticleTrail = React.memo(({ marblePosition, color }: { marblePosition: T
 
 ParticleTrail.displayName = 'ParticleTrail';
 
+interface MarbleProps {
+  position: Vec3;
+  onCollide: CollisionHandler;
+  unlocks: UnlocksState;
+}
+
 // Enhanced Marble Component with trail effect
-const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
-  const [ref, api] = useSphere(() => ({
+const Marble = React.memo(({ position, onCollide, unlocks }: MarbleProps) => {
+  const [ref, api] = useSphere<THREE.Mesh>(() => ({
     mass: 1,
     position,
     args: [0.3],
@@ -410,11 +434,15 @@ const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
       friction: 0.3
     },
     onCollide: (e) => {
-      if (e.body && e.body.userData?.nodeId) {
-        const collisionEvent = {
-          nodeId: e.body.userData.nodeId,
+      const nodeId = (e.body.userData as { nodeId?: string } | undefined)?.nodeId;
+      if (nodeId) {
+        // NOTE: cannon-es reports contact.contactPoint as a [x,y,z] array, not
+        // an {x,y,z} object. This shape mismatch pre-dates Phase 1 and is left
+        // as-is here (behavior-preserving cast); Phase 2/3 addresses it properly.
+        const collisionEvent: Collision3DEvent = {
+          nodeId,
           velocity: e.contact?.impactVelocity || 5,
-          position: e.contact?.contactPoint || { x: 0, y: 0, z: 0 },
+          position: (e.contact?.contactPoint as unknown as { x: number; y: number; z: number }) || { x: 0, y: 0, z: 0 },
           timestamp: Date.now()
         };
         onCollide(collisionEvent);
@@ -451,7 +479,7 @@ const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
         distance={2}
         decay={2}
       />
-      <Sphere ref={ref as any} args={[0.3, 32, 32]} castShadow>
+      <Sphere ref={ref} args={[0.3, 32, 32]} castShadow>
         <meshStandardMaterial
           color={unlocks?.goldenMarble ? "#E0E0E0" : "#8A8A8A"}
           metalness={0.9}
@@ -465,9 +493,15 @@ const Marble = React.memo(({ position, onCollide, unlocks }: any) => {
 });
 Marble.displayName = 'Marble';
 
+interface StaticModuleProps {
+  position: Vec3;
+  nodeId: string;
+  params: ModuleParams;
+}
+
 // Ramp Component - For guiding marbles
-const Ramp = React.memo(({ position, nodeId, params }: any) => {
-  const [ref] = useBox(() => ({
+const Ramp = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+  const [ref] = useBox<THREE.Group>(() => ({
     position,
     args: [4, 0.2, 2],
     type: 'Static',
@@ -475,7 +509,7 @@ const Ramp = React.memo(({ position, nodeId, params }: any) => {
   }));
 
   return (
-    <group ref={ref as any} rotation={[0, 0, (params.angle || 15) * Math.PI / 180]}>
+    <group ref={ref} rotation={[0, 0, (params.angle || 15) * Math.PI / 180]}>
       <Box args={[4, 0.2, 2]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#3A3A3A"
@@ -489,8 +523,8 @@ const Ramp = React.memo(({ position, nodeId, params }: any) => {
 Ramp.displayName = 'Ramp';
 
 // Enhanced Bumper Component
-const Bumper = React.memo(({ position, nodeId, params }: any) => {
-  const [ref] = useCylinder(() => ({
+const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+  const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [1.2, 1.2, 0.6],
     type: 'Static',
@@ -507,7 +541,7 @@ const Bumper = React.memo(({ position, nodeId, params }: any) => {
   }, [hit]);
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Cylinder args={[1.2, 1.2, 0.6]} castShadow receiveShadow>
         <meshStandardMaterial
           color={hit ? "#FFFFFF" : "#3A3A3A"}
@@ -532,8 +566,8 @@ const Bumper = React.memo(({ position, nodeId, params }: any) => {
 Bumper.displayName = 'Bumper';
 
 // Chime Component - Vertical tubes that create melodic sounds
-const Chime = React.memo(({ position, nodeId, params }: any) => {
-  const [ref] = useCylinder(() => ({
+const Chime = React.memo(({ position, nodeId, params }: StaticModuleProps) => {
+  const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [0.15, 0.15, 3],
     type: 'Static',
@@ -550,7 +584,7 @@ const Chime = React.memo(({ position, nodeId, params }: any) => {
   }, [chiming]);
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Cylinder args={[0.15, 0.15, 3]} castShadow receiveShadow>
         <meshStandardMaterial
           color={chiming ? "#E0E0E0" : "#4A4A4A"}
@@ -575,10 +609,25 @@ const Chime = React.memo(({ position, nodeId, params }: any) => {
 });
 Chime.displayName = 'Chime';
 
+interface SpinnerProps extends StaticModuleProps {
+  onCollide?: CollisionHandler;
+}
+
+// Dead collider API shape referenced by the (currently non-firing) Spinner
+// collision listener below — see REFACTORING_PLAN.md P2. `ref.current` is a
+// THREE.Group, which never actually has an `.api` member; this type only
+// exists so the always-false check below still compiles.
+interface DeadColliderRef {
+  api?: {
+    addEventListener: (type: string, cb: (e: unknown) => void) => string;
+    removeEventListener: (type: string, cb: string) => void;
+  };
+}
+
 // Spinner Component - Rotating wheel with multiple note triggers
-const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
+const Spinner = React.memo(({ position, nodeId, params, onCollide }: SpinnerProps) => {
   const meshRef = useRef<THREE.Mesh>(null);
-  const [ref] = useCylinder(() => ({
+  const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [1.5, 1.5, 0.3],
     type: 'Static',
@@ -593,18 +642,17 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
 
   // Add collision detection for sound
   useEffect(() => {
-    const currentRef = ref.current as any;
+    const currentRef = ref.current as unknown as DeadColliderRef | null;
     if (currentRef && currentRef.api) {
-      const handleCollision = (e: any) => {
+      const handleCollision = (e: unknown) => {
         console.log('Spinner collision!');
-        if (onCollide) {
-          onCollide({
-            nodeId,
-            velocity: e.contact?.impactVelocity || 5,
-            position: e.contact?.contactPoint || { x: 0, y: 0, z: 0 },
-            timestamp: Date.now()
-          });
-        }
+        const contact = (e as { contact?: { impactVelocity?: number; contactPoint?: { x: number; y: number; z: number } } }).contact;
+        onCollide?.({
+          nodeId,
+          velocity: contact?.impactVelocity || 5,
+          position: contact?.contactPoint || { x: 0, y: 0, z: 0 },
+          timestamp: Date.now()
+        });
       };
 
       const collisionHandler = currentRef.api.addEventListener('collide', handleCollision);
@@ -612,10 +660,10 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
         currentRef?.api?.removeEventListener('collide', collisionHandler);
       };
     }
-  }, [nodeId, onCollide]);
+  }, [nodeId, onCollide, ref]);
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Cylinder ref={meshRef} args={[1.5, 1.5, 0.3]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#5A5A5A"
@@ -640,8 +688,8 @@ const Spinner = React.memo(({ position, nodeId, params, onCollide }: any) => {
 Spinner.displayName = 'Spinner';
 
 // Funnel Component - Spiral sound effect
-const Funnel = React.memo(({ position, nodeId }: any) => {
-  const [ref] = useCylinder(() => ({
+const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
+  const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [2, 0.3, 2],
     type: 'Static',
@@ -649,7 +697,7 @@ const Funnel = React.memo(({ position, nodeId }: any) => {
   }));
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Cylinder args={[2, 0.3, 2]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#4A4A4A"
@@ -674,8 +722,8 @@ const Funnel = React.memo(({ position, nodeId }: any) => {
 Funnel.displayName = 'Funnel';
 
 // Seesaw Component - Balance-triggered sound
-const Seesaw = React.memo(({ position, nodeId }: any) => {
-  const [ref] = useBox(() => ({
+const Seesaw = React.memo(({ position, nodeId }: StaticModuleProps) => {
+  const [ref] = useBox<THREE.Group>(() => ({
     position,
     args: [3, 0.2, 0.8],
     type: 'Static',
@@ -683,7 +731,7 @@ const Seesaw = React.memo(({ position, nodeId }: any) => {
   }));
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Box args={[3, 0.2, 0.8]} castShadow receiveShadow>
         <meshStandardMaterial
           color="#6A6A6A"
@@ -708,8 +756,8 @@ const Seesaw = React.memo(({ position, nodeId }: any) => {
 Seesaw.displayName = 'Seesaw';
 
 // Bell Component - Harmonic bell sounds
-const Bell = React.memo(({ position, nodeId }: any) => {
-  const [ref] = useCylinder(() => ({
+const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
+  const [ref] = useCylinder<THREE.Group>(() => ({
     position,
     args: [1, 1.5, 2],
     type: 'Static',
@@ -726,7 +774,7 @@ const Bell = React.memo(({ position, nodeId }: any) => {
   }, [ringing]);
 
   return (
-    <group ref={ref as any}>
+    <group ref={ref}>
       <Cylinder args={[1, 1.5, 2]} castShadow receiveShadow>
         <meshStandardMaterial
           color={ringing ? "#D0D0D0" : "#7A7A7A"}
@@ -752,14 +800,14 @@ Bell.displayName = 'Bell';
 
 // Ground Component
 const Ground = React.memo(() => {
-  const [ref] = usePlane(() => ({
+  const [ref] = usePlane<THREE.Mesh>(() => ({
     rotation: [-Math.PI / 2, 0, 0],
     position: [0, -2, 0],
     type: 'Static'
   }));
 
   return (
-    <Plane ref={ref as any} args={[50, 50]} receiveShadow>
+    <Plane ref={ref} args={[50, 50]} receiveShadow>
       <MeshReflectorMaterial
         mirror={0.15}
         blur={[256, 256]}
@@ -775,16 +823,30 @@ const Ground = React.memo(() => {
 });
 Ground.displayName = 'Ground';
 
+interface SceneProps {
+  nodes: PatchNode[];
+  onCollision?: CollisionHandler;
+  selectedNodeType?: PatchNode['type'];
+  onNodeAdd?: (position: { x: number; y: number; z: number }) => void;
+  onStatsUpdate?: (stats: SessionStats) => void;
+  divineLightActive: boolean;
+  marbleDropTrigger: number;
+}
+
 // 3D Scene Component
-const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, divineLightActive, marbleDropTrigger }: any) => {
-  const [marbles, setMarbles] = useState<any[]>([]);
-  const [ripples, setRipples] = useState<Array<{ id: string; position: [number, number, number]; color: string }>>([]);
+const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onStatsUpdate, divineLightActive, marbleDropTrigger }: SceneProps) => {
+  const [marbles, setMarbles] = useState<MarbleState[]>([]);
+  const [ripples, setRipples] = useState<Array<{ id: string; position: Vec3; color: string }>>([]);
 
   // Combo System State
   const [comboCount, setComboCount] = useState(0);
   const [comboMultiplier, setComboMultiplier] = useState(1);
   const [lastCollisionTime, setLastCollisionTime] = useState(0);
   const [comboDisplay, setComboDisplay] = useState({ show: false, text: '', scale: 1 });
+  // `comboDisplay` itself is never rendered — the <ComboDisplay> component
+  // exists but isn't mounted anywhere yet. Phase 5 asset — wired up later
+  // (REFACTORING_PLAN.md §0.5/§0.6).
+  void comboDisplay;
   const comboTimeoutMs = 2000; // 2 seconds to maintain combo
 
   // Unlock System State
@@ -836,12 +898,12 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
   };
 
   // Handle mouse clicks to add modules/marbles
-  const handlePointerDown = (e: any) => {
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     const point = e.point;
 
     if (selectedNodeType === 'marble') {
-      const newMarble = {
+      const newMarble: MarbleState = {
         id: `marble-${Date.now()}`,
         position: [point.x, 8, point.z]
       };
@@ -852,7 +914,7 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
   };
 
   // Handle collisions and create ripple effects
-  const handleCollision = (event: any) => {
+  const handleCollision = (event: Collision3DEvent) => {
     const now = Date.now();
     const timeSinceLastCollision = now - lastCollisionTime;
 
@@ -1060,7 +1122,7 @@ const Scene = React.memo(({ nodes, onCollision, selectedNodeType, onNodeAdd, onS
 
   // Module renderer
   const renderModule = (node: PatchNode) => {
-    const position = [
+    const position: Vec3 = [
       node.position.x,
       node.position.y,
       0
@@ -1251,11 +1313,14 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
   const [initError, setInitError] = useState<string | null>(null);
 
   // Session stats for UI display
-  const [displayStats, setDisplayStats] = useState({
+  const [displayStats, setDisplayStats] = useState<SessionStats>({
     totalCollisions: 0,
     maxCombo: 0,
     totalScore: 0
   });
+  // No UI currently renders these stats. Phase 5 asset — wired up later
+  // (REFACTORING_PLAN.md §0.5).
+  void displayStats;
 
   // Marble drop trigger state
   const [marbleDropTrigger, setMarbleDropTrigger] = useState(0);
@@ -1283,6 +1348,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
         synthBridge.dispose();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fixed in Phase 3 (see REFACTORING_PLAN.md A1): this cleanup captures a stale `synthBridge` (always null on first run), so dispose() is never actually reachable. Adding the real deps here would change when the effect re-runs; the proper fix (ref-based dispose) belongs to Phase 3.
   }, []);
 
   const handleMute = () => {
@@ -1299,7 +1365,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
     }
   };
 
-  const handleModuleSelect = (moduleType: string) => {
+  const handleModuleSelect = (moduleType: PatchNode['type']) => {
     if (onModuleTypeChange) {
       onModuleTypeChange(moduleType);
     }
@@ -1330,7 +1396,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
       }
     } else if (event.key >= '1' && event.key <= '8') {
       // Module selection with number keys 1-8
-      const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'];
+      const moduleTypes = ['marble', 'ramp', 'bumper', 'chime', 'spinner', 'funnel', 'seesaw', 'bell'] as const;
       const index = parseInt(event.key) - 1;
       if (index >= 0 && index < moduleTypes.length) {
         handleModuleSelect(moduleTypes[index]);
@@ -1378,7 +1444,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
           >
             <Scene
               nodes={nodes}
-              onCollision={(event: any) => {
+              onCollision={(event) => {
                 if (synthBridge) {
                   synthBridge.triggerCollision(event);
                 }
@@ -1386,7 +1452,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
               }}
               selectedNodeType={selectedNodeType}
               onNodeAdd={onNodeAdd}
-              onStatsUpdate={(stats: any) => setDisplayStats(stats)}
+              onStatsUpdate={(stats) => setDisplayStats(stats)}
               divineLightActive={divineLightActive}
               marbleDropTrigger={marbleDropTrigger}
             />
@@ -1606,7 +1672,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
           justifyContent: 'center',
           minWidth: { xs: 'auto', sm: 208 }
         }}>
-          {[
+          {([
             { type: 'marble', symbol: '◉', name: 'ORIGIN', key: '1' },
             { type: 'ramp', symbol: '△', name: 'SLOPE', key: '2' },
             { type: 'bumper', symbol: '◉', name: 'BASE', key: '3' },
@@ -1615,7 +1681,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(({
             { type: 'funnel', symbol: '◈', name: 'PORTAL', key: '6' },
             { type: 'seesaw', symbol: '∞', name: 'BALANCE', key: '7' },
             { type: 'bell', symbol: '❖', name: 'AXIS', key: '8' }
-          ].map((module) => (
+          ] as const).map((module) => (
             <Tooltip
               key={module.type}
               title={`${module.name} (Press ${module.key})`}

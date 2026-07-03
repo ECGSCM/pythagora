@@ -61,10 +61,6 @@ export default defineConfig({
           'tone': ['tone'],
           // UI
           'mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
-          // Backend
-          'supabase': ['@supabase/supabase-js'],
-          // State
-          'state': ['zustand', '@tanstack/react-query']
         }
       }
     },

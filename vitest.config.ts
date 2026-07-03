@@ -9,10 +9,12 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
-    // Mock Canvas API since Matter.js uses it
     pool: 'forks',
     // Include test files
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // No specs exist yet post-Phase-1-demolition (all prior tests targeted
+    // dead 2D/matter-js code). Real tests return in Phase 3/6.
+    passWithNoTests: true,
     // Coverage configuration
     coverage: {
       provider: 'v8',
@@ -24,12 +26,6 @@ export default defineConfig({
         '**/*.config.*',
         'dist/',
       ],
-    },
-    // Mock environment variables
-    env: {
-      VITE_SUPABASE_URL: 'http://localhost:54321',
-      VITE_SUPABASE_ANON_KEY: 'test_anon_key',
-      VITE_STRIPE_PUBLISHABLE_KEY: 'pk_test_123456789',
     },
   },
   // Configure path aliases

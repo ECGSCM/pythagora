@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Box,
   CssBaseline,
@@ -12,8 +12,8 @@ import {
 import { Physics3DCanvas } from './components/Physics3DCanvas';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
-import { PatchNode } from './types/db.types';
-import { CollisionEvent } from './engines/physics';
+import { PatchNode } from './types/patch';
+import { CollisionEvent } from './types/events';
 
 // Divine Monochrome Theme - Sacred minimalist design
 const divineTheme = createTheme({
@@ -97,60 +97,53 @@ const divineTheme = createTheme({
   },
 });
 
-const moduleTypes = [
-  { type: 'marble', name: 'Origin', description: 'Drop marble', symbol: 'marble' },
-  { type: 'ramp', name: 'Slope', description: 'Guiding path', symbol: 'ramp' },
-  { type: 'bumper', name: 'Base', description: 'Foundation', symbol: 'bumper' },
-  { type: 'chime', name: 'Hex', description: 'Resonance', symbol: 'chime' },
-  { type: 'spinner', name: 'Spiral', description: 'Evolution', symbol: 'spinner' },
-  { type: 'funnel', name: 'Portal', description: 'Transcendence', symbol: 'funnel' },
-  { type: 'seesaw', name: 'Balance', description: 'Equilibrium', symbol: 'seesaw' },
-  { type: 'bell', name: 'Axis', description: 'Cosmic pillar', symbol: 'bell' },
-];
-
 function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [nodes, setNodes] = useState<PatchNode[]>([]);
-  const [selectedModuleType, setSelectedModuleType] = useState<string>('marble');
+  const [selectedModuleType, setSelectedModuleType] = useState<PatchNode['type']>('marble');
   const [notification, setNotification] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
-  // Add initial demo modules when starting
-  useEffect(() => {
-    if (!showLanding && nodes.length === 0) {
-      const demoModules: PatchNode[] = [
-        {
-          id: 'ramp-demo-1',
-          type: 'ramp',
-          position: { x: -5, y: 8 },
-          params: { angle: 30 }
-        },
-        {
-          id: 'bumper-demo-1',
-          type: 'bumper',
-          position: { x: 0, y: 5 },
-          params: { pitch: 'C4' }
-        },
-        {
-          id: 'chime-demo-1',
-          type: 'chime',
-          position: { x: 3, y: 3 },
-          params: { note: 'E4' }
-        },
-        {
-          id: 'bell-demo-1',
-          type: 'bell',
-          position: { x: 6, y: 1 },
-          params: { frequency: 528 }
-        }
-      ];
-      setNodes(demoModules);
+  // Transition out of the landing page and seed the initial demo modules.
+  // This used to be a useEffect keyed on [showLanding, nodes.length], but
+  // seeding state in response to a state change is exactly what "Enter" is
+  // for — doing it directly in the click handler is equivalent and avoids
+  // the extra render pass.
+  const handleEnter = useCallback(() => {
+    setShowLanding(false);
 
-      setNotification({
-        message: 'Click to drop marbles and create sacred music',
-        severity: 'info'
-      });
-    }
-  }, [showLanding, nodes.length]);
+    const demoModules: PatchNode[] = [
+      {
+        id: 'ramp-demo-1',
+        type: 'ramp',
+        position: { x: -5, y: 8 },
+        params: { angle: 30 }
+      },
+      {
+        id: 'bumper-demo-1',
+        type: 'bumper',
+        position: { x: 0, y: 5 },
+        params: { pitch: 'C4' }
+      },
+      {
+        id: 'chime-demo-1',
+        type: 'chime',
+        position: { x: 3, y: 3 },
+        params: { note: 'E4' }
+      },
+      {
+        id: 'bell-demo-1',
+        type: 'bell',
+        position: { x: 6, y: 1 },
+        params: { frequency: 528 }
+      }
+    ];
+    setNodes(demoModules);
+
+    setNotification({
+      message: 'Click to drop marbles and create sacred music',
+      severity: 'info'
+    });
+  }, []);
 
   // Handle adding new modules
   const handleModuleAdd = useCallback((position: { x: number; y: number; z?: number }) => {
@@ -158,7 +151,7 @@ function App() {
 
     const newModule: PatchNode = {
       id: `${selectedModuleType}-${Date.now()}`,
-      type: selectedModuleType as any,
+      type: selectedModuleType,
       position: { x: position.x, y: position.y + (position.z || 0) },
       params: getDefaultParams(selectedModuleType),
       size: getDefaultSize(selectedModuleType)
@@ -172,13 +165,14 @@ function App() {
     });
   }, [selectedModuleType]);
 
-  // Handle collision events
+  // Handle collision events. No UI currently reacts to individual
+  // collisions — Phase 5 asset — wired up later (REFACTORING_PLAN.md §0.6).
   const handleCollision = useCallback((_event: CollisionEvent) => {
     // Collision feedback can be handled here for UI updates
   }, []);
 
   // Handle module type selection
-  const handleSelectionChange = useCallback((moduleType: string) => {
+  const handleSelectionChange = useCallback((moduleType: PatchNode['type']) => {
     setSelectedModuleType(moduleType);
     setNotification({
       message: `Selected: ${moduleType.toUpperCase()}`,
@@ -186,7 +180,8 @@ function App() {
     });
   }, []);
 
-  // Clear all modules
+  // Clear all modules. Not yet wired to a keyboard shortcut — Phase 2 (P9)
+  // binds this to the "C" key via a window-level keydown listener.
   const handleClearAll = useCallback(() => {
     setNodes([]);
     setNotification({
@@ -194,12 +189,13 @@ function App() {
       severity: 'info'
     });
   }, []);
+  void handleClearAll; // Phase 2 asset — wired up later (REFACTORING_PLAN.md P9)
 
   if (showLanding) {
     return (
       <ThemeProvider theme={divineTheme}>
         <CssBaseline />
-        <Landing onEnter={() => setShowLanding(false)} />
+        <Landing onEnter={handleEnter} />
       </ThemeProvider>
     );
   }
@@ -289,7 +285,7 @@ function App() {
   );
 }
 
-function getDefaultParams(moduleType: string): Record<string, any> {
+function getDefaultParams(moduleType: PatchNode['type']): Record<string, string | number | string[]> {
   switch (moduleType) {
     case 'ramp':
       return { angle: 15, material: 'wood' };
@@ -310,7 +306,7 @@ function getDefaultParams(moduleType: string): Record<string, any> {
   }
 }
 
-function getDefaultSize(moduleType: string): { width: number; height: number } {
+function getDefaultSize(moduleType: PatchNode['type']): { width: number; height: number } {
   switch (moduleType) {
     case 'ramp':
       return { width: 8, height: 2 };

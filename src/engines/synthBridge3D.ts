@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
 import { AudioEngine } from './audio';
-import { PatchNode } from '../types/db.types';
+import { PatchNode } from '../types/patch';
 
 export interface Collision3DEvent {
   nodeId: string;
@@ -70,7 +70,7 @@ export class SynthBridge3D {
       }
 
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -79,7 +79,7 @@ export class SynthBridge3D {
     this.audioEngine.removeNode(nodeId);
   }
 
-  updateNodeParam(nodeId: string, param: string, value: any): void {
+  updateNodeParam(nodeId: string, param: string, value: number): void {
     this.audioEngine.updateNodeParam(nodeId, param, value);
   }
 

@@ -23,6 +23,13 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      // Match tsconfig's noUnusedParameters/noUnusedLocals convention: a
+      // leading underscore marks an intentionally-unused binding (e.g. a
+      // callback parameter kept for its type but not read yet).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 )

@@ -1,84 +1,44 @@
-# Pythagora-Synth デプロイガイド
+# Deployment
 
-## Netlify でデプロイ（おすすめ）
+Pythagora Synth is a fully static, client-side app — there is no backend and
+no environment variables to configure. It deploys to **GitHub Pages**.
 
-### 手順
+## How it's wired up
 
-1. **ビルド**
-```bash
-npm run build
-```
+- `vite.config.ts` sets `base: '/pythagora/'`, matching this repository's
+  name (`ECGSCM/pythagora`). If you fork this repo under a different name,
+  update `base` to match.
+- `package.json` has a `deploy` script that builds the app and publishes
+  `dist/` to the `gh-pages` branch using the [`gh-pages`](https://www.npmjs.com/package/gh-pages)
+  package.
 
-2. **Netlify アカウント作成**
-https://www.netlify.com/
-
-3. **ドラッグ＆ドロップ**
-- `dist` フォルダを Netlify ダッシュボードにドラッグ
-
-4. **完了！**
-- 自動的に URL が発行されます
-- `https://xxxxx.netlify.app`
-
-
-## Vercel でデプロイ
-
-### 手順
-
-1. **Vercel アカウント作成**
-https://vercel.com/
-
-2. **GitHub リポジトリを連携**
-
-3. **自動デプロイ設定**
-- Framework Preset: `Vite`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-
-4. **完了！**
-
-
-## GitHub Pages でデプロイ（無料）
-
-### vite.config.ts の設定
-
-```typescript
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-export default defineConfig({
-  plugins: [react()],
-  base: '/pythagora-synth/', // リポジトリ名
-})
-```
-
-### デプロイコマンド
+## Deploying
 
 ```bash
-# package.json に追加
-"deploy": "npm run build && gh-pages -d dist"
-
-# パッケージ追加
-npm install --save-dev gh-pages
-
-# デプロイ
-npm run deploy
+pnpm install
+pnpm deploy          # builds, then publishes dist/ to the gh-pages branch
 ```
 
-URL: `https://ecgscm.github.io/pythagora-synth/`
+`pnpm deploy:force` does the same but force-pushes, which is occasionally
+necessary if the `gh-pages` branch history has diverged.
 
+After the first deploy, enable GitHub Pages for this repository (Settings →
+Pages → deploy from the `gh-pages` branch), if it isn't already. The site
+will be available at:
 
-## 現在の feature ブランチをマージしてデプロイ
-
-1. main ブランチに切り替え
-```bash
-git checkout main
-git merge feature/sacred-geometry-spinner-fix
-git push origin main
+```
+https://ecgscm.github.io/pythagora/
 ```
 
-2. 上記のデプロイ方法を実行
+## CI
 
+`.github/workflows/ci.yml` runs lint, type checking, tests, and a production
+build on every push/PR to `main`. It does not deploy — a GitHub Pages deploy
+job (via `actions/deploy-pages`) is planned for a later phase (see
+`REFACTORING_PLAN.md`, Phase 6). Until then, deploys are manual via
+`pnpm deploy`.
 
-## 環境変数（必要な場合）
+## Environment variables
 
-なし（このアプリは環境変数不要）
+None. This app has no backend, no auth, and no third-party services — the
+entire experience runs in the browser.
