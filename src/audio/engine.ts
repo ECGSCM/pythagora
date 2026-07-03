@@ -94,11 +94,47 @@ export class AudioEngine {
   // (they still step harmony and feed the reverb send).
   private readonly recentEventTimes: number[] = [];
 
+  private gestureUnlock: (() => void) | null = null;
+
   constructor() {
     this.bus = new AudioBus();
     this.voices = new VoiceManager(this.bus, createVoice);
     this.drone = new AmbientDrone(this.bus);
     this.harmony = new HarmonyEngine();
+    this.installGestureUnlock();
+  }
+
+  /**
+   * Mobile audio unlock. iOS Safari (and strict Android policies) only allow
+   * AudioContext.resume() when it is called synchronously INSIDE a user
+   * gesture handler. The app used to resume on mount and on collision — both
+   * outside any gesture — which desktop Chrome tolerates (any prior page
+   * gesture unlocks later resumes) but mobile Safari does not, leaving the
+   * context suspended forever: the "no sound on mobile" bug. The engine now
+   * listens for the first real gestures itself and resumes inside them;
+   * listeners detach once the context is running (or on dispose).
+   */
+  private installGestureUnlock(): void {
+    if (typeof window === 'undefined') return;
+    const unlock = () => {
+      // Tone.start() calls context.resume() synchronously within this handler,
+      // which satisfies the mobile gesture requirement.
+      void this.resume();
+      if (Tone.getContext().state === 'running') this.removeGestureUnlock();
+    };
+    this.gestureUnlock = unlock;
+    // capture=true so the unlock runs even if some overlay stops propagation.
+    window.addEventListener('pointerdown', unlock, true);
+    window.addEventListener('touchend', unlock, true);
+    window.addEventListener('keydown', unlock, true);
+  }
+
+  private removeGestureUnlock(): void {
+    if (typeof window === 'undefined' || !this.gestureUnlock) return;
+    window.removeEventListener('pointerdown', this.gestureUnlock, true);
+    window.removeEventListener('touchend', this.gestureUnlock, true);
+    window.removeEventListener('keydown', this.gestureUnlock, true);
+    this.gestureUnlock = null;
   }
 
   /** Register the (optional) key-change callback used by the visual layer. */
@@ -123,6 +159,8 @@ export class AudioEngine {
           this.resumePromise = null;
           // The drone must only start once the context is actually running.
           this.startDroneIfRunning();
+          // Context is up — the one-shot mobile unlock listeners are done.
+          this.removeGestureUnlock();
         })
         .catch((error: unknown) => {
           this.resumePromise = null;
@@ -252,6 +290,7 @@ export class AudioEngine {
 
   dispose(): void {
     this.disposed = true;
+    this.removeGestureUnlock();
     this.drone.dispose();
     this.voices.dispose();
     this.bus.dispose();
