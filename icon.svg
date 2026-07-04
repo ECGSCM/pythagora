@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Pythagora Synth">
+  <!-- Near-black rounded-square background (Divine Monochrome base) -->
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="#0A0A0F" />
+
+  <!-- Moonlight circle -->
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#E8E6E0" stroke-width="4" opacity="0.55" />
+
+  <!-- Inscribed hexagon -->
+  <polygon
+    points="256,104 373,180 373,332 256,408 139,332 139,180"
+    fill="none"
+    stroke="#E8E6E0"
+    stroke-width="4"
+    opacity="0.85"
+  />
+
+  <!-- Center: a small filled circle (the light that answers a collision) -->
+  <circle cx="256" cy="256" r="28" fill="#E8E6E0" />
+</svg>
