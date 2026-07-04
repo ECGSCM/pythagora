@@ -5,6 +5,7 @@ import { VoiceManager } from './voices';
 import { AmbientDrone } from './drone';
 import { createVoice, makePitchContext, type InstrumentName } from './instruments';
 import { HarmonyEngine, KEY_NAMES, keyRatioForRoot, shouldStepKey } from './harmony';
+import { MediaSessionPin } from './unlock';
 import {
   AUDIO_EVENT_WINDOW_MS,
   AUDIO_EVENTS_PER_100MS,
@@ -95,6 +96,8 @@ export class AudioEngine {
   private readonly recentEventTimes: number[] = [];
 
   private gestureUnlock: (() => void) | null = null;
+  private visibilityUnlock: (() => void) | null = null;
+  private readonly mediaPin = new MediaSessionPin();
 
   constructor() {
     this.bus = new AudioBus();
@@ -105,36 +108,62 @@ export class AudioEngine {
   }
 
   /**
-   * Mobile audio unlock. iOS Safari (and strict Android policies) only allow
-   * AudioContext.resume() when it is called synchronously INSIDE a user
-   * gesture handler. The app used to resume on mount and on collision — both
-   * outside any gesture — which desktop Chrome tolerates (any prior page
-   * gesture unlocks later resumes) but mobile Safari does not, leaving the
-   * context suspended forever: the "no sound on mobile" bug. The engine now
-   * listens for the first real gestures itself and resumes inside them;
-   * listeners detach once the context is running (or on dispose).
+   * Mobile audio unlock (see src/audio/unlock.ts for the full story). Inside
+   * every user gesture we (1) resume the context — iOS only allows resume()
+   * synchronously within a gesture handler — and (2) pin the iOS audio
+   * session to the media-playback category via a looping silent <audio>
+   * element, which makes Web Audio immune to the hardware SILENT SWITCH
+   * (otherwise a running context is still fully muted in ring-silent mode —
+   * the "still no sound on mobile" bug).
+   *
+   * The listeners stay installed for the engine's whole life: iOS suspends or
+   * 'interrupt's the context on backgrounding/calls, so any later gesture must
+   * be able to re-unlock. The handler is a cheap state check when everything
+   * is already running. A visibilitychange hook re-resumes on tab return.
    */
   private installGestureUnlock(): void {
     if (typeof window === 'undefined') return;
     const unlock = () => {
+      // Media-category pin first — play() must start inside the gesture.
+      this.mediaPin.ensure();
+      this.mediaPin.refresh();
       // Tone.start() calls context.resume() synchronously within this handler,
       // which satisfies the mobile gesture requirement.
-      void this.resume();
-      if (Tone.getContext().state === 'running') this.removeGestureUnlock();
+      if (Tone.getContext().state !== 'running') {
+        void this.resume();
+      }
     };
     this.gestureUnlock = unlock;
     // capture=true so the unlock runs even if some overlay stops propagation.
     window.addEventListener('pointerdown', unlock, true);
     window.addEventListener('touchend', unlock, true);
     window.addEventListener('keydown', unlock, true);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !this.disposed) {
+        // iOS marks the context 'interrupted'/suspended while backgrounded and
+        // pauses media elements; nudge both back on return.
+        void this.resume();
+        this.mediaPin.refresh();
+      }
+    };
+    this.visibilityUnlock = onVisible;
+    document.addEventListener('visibilitychange', onVisible);
   }
 
   private removeGestureUnlock(): void {
-    if (typeof window === 'undefined' || !this.gestureUnlock) return;
-    window.removeEventListener('pointerdown', this.gestureUnlock, true);
-    window.removeEventListener('touchend', this.gestureUnlock, true);
-    window.removeEventListener('keydown', this.gestureUnlock, true);
-    this.gestureUnlock = null;
+    if (typeof window === 'undefined') return;
+    if (this.gestureUnlock) {
+      window.removeEventListener('pointerdown', this.gestureUnlock, true);
+      window.removeEventListener('touchend', this.gestureUnlock, true);
+      window.removeEventListener('keydown', this.gestureUnlock, true);
+      this.gestureUnlock = null;
+    }
+    if (this.visibilityUnlock) {
+      document.removeEventListener('visibilitychange', this.visibilityUnlock);
+      this.visibilityUnlock = null;
+    }
+    this.mediaPin.dispose();
   }
 
   /** Register the (optional) key-change callback used by the visual layer. */
@@ -159,8 +188,6 @@ export class AudioEngine {
           this.resumePromise = null;
           // The drone must only start once the context is actually running.
           this.startDroneIfRunning();
-          // Context is up — the one-shot mobile unlock listeners are done.
-          this.removeGestureUnlock();
         })
         .catch((error: unknown) => {
           this.resumePromise = null;
