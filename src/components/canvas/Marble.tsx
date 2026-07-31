@@ -31,6 +31,7 @@ export const Marble = React.memo(({ id, position, evict = false, onCollide, onSe
   const liveOnCollide = useLiveCallback(onCollide);
   const liveOnSettle = useLiveCallback(onSettle);
   const golden = useGameStore((s) => s.unlocks.goldenMarble);
+  const enhancedTrail = useGameStore((s) => s.unlocks.enhancedParticles);
 
   const [ref, api] = useSphere<THREE.Mesh>(() => ({
     mass: MARBLE.mass,
@@ -200,11 +201,13 @@ export const Marble = React.memo(({ id, position, evict = false, onCollide, onSe
         />
       </Sphere>
 
-      {/* Comet trail follows the live position ref. */}
+      {/* Comet trail follows the live position ref. Size steps up once the
+          5-combo `enhancedParticles` unlock fires — the trail is always
+          present, but this is its visible payoff. */}
       <ParticleTrail
         marblePosition={marblePosition.current}
         color={golden ? MARBLE.trailColorGolden : MARBLE.trailColor}
-        size={0.35}
+        size={enhancedTrail ? MARBLE.trailSizeEnhanced : MARBLE.trailSize}
       />
 
       {/* Ascension motes — dormant until the marble settles. */}

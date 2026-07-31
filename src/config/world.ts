@@ -84,6 +84,11 @@ export const MARBLE = {
   // Comet trail colors (moonlight normally, gold once golden marble unlocks).
   trailColor: '#E8E6E0',
   trailColorGolden: '#D4AF37',
+
+  // Comet trail size (always visible from the first drop). The enhanced size
+  // is the visible payoff of the 5-combo `enhancedParticles` unlock.
+  trailSize: 0.35,
+  trailSizeEnhanced: 0.55,
 } as const;
 
 // Fixed unit XZ offsets for the ascension motes (deterministic — no Math.random

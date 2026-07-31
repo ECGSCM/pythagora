@@ -213,6 +213,12 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
       } else if (key === 'f') {
         handleFollowToggle();
       } else if (event.code === 'Space') {
+        // A focused button (MUI IconButton, etc.) treats Space as its native
+        // activation key — preventDefault() here would suppress that and drop
+        // a marble instead, breaking keyboard activation of every overlay
+        // button. Let the browser handle it and skip the marble drop.
+        const onInteractive = !!target?.closest('button, a[href], select, [role="button"]');
+        if (onInteractive) return;
         event.preventDefault();
         // Space always drops a marble, regardless of the selected module type.
         setMarbleDropTrigger((prev) => prev + 1);

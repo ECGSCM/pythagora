@@ -28,8 +28,13 @@ for the full aesthetic spec.
 - **A breathing world** — every module pulses on a shared ~5s breathing
   cycle, phase-offset by position, so the whole scene reads as one organism.
 - **Combo / unlock system** — chained hits build a combo multiplier (shown
-  as a Roman numeral in-scene); long combos add a shimmering drone layer and
-  unlock an Aurora pulse on each key change.
+  as a Roman numeral in-scene) and step through four unlock tiers: 5 hits
+  brighten and enlarge the marble's comet trail, 10 hits unlock the golden
+  marble (and, at the same threshold, add a shimmering drone layer that
+  drops out again if the combo breaks), 15 hits unlock rainbow ripples, and
+  20 hits unlock golden mode. Separately, an Aurora pulse fires on every key
+  change (every 8 collisions) regardless of combo — it isn't gated by any
+  unlock.
 - **Disappearing UI** — the control overlay fades out after 30s of no input
   and returns instantly on the next pointer or key event, so the canvas and
   sound are the only things left on screen.
@@ -107,10 +112,13 @@ Fully static, no environment variables. `vite.config.ts` sets
 update it if you fork under a different name.
 
 `.github/workflows/ci.yml` runs lint, type-check, tests and a production
-build on every push/PR, then (on push to `main` only) builds again and
-deploys `dist/` to GitHub Pages via `actions/deploy-pages`. Enable Pages for
-the repository under Settings → Pages → Source: GitHub Actions. The site is
-served at `https://ecgscm.github.io/pythagora/`.
+build on every push and PR. On push to `main` (or when the workflow is run
+manually via `workflow_dispatch`, for a redeploy without a new commit), a
+second job builds the site again and publishes `dist/` to the `gh-pages`
+branch via `peaceiris/actions-gh-pages@v4`, since this repository serves
+Pages from a branch rather than through the Pages deployment API. Pages must
+be configured under Settings → Pages → Source: Deploy from a branch →
+`gh-pages`. The site is served at `https://ecgscm.github.io/pythagora/`.
 
 To build and preview a production bundle locally:
 
