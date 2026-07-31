@@ -81,6 +81,41 @@ export const BRIGHTNESS_MAX = 1;
 export const BRIGHTNESS_CUTOFF_MUL_MIN = 0.6; // soft hit -> darker
 export const BRIGHTNESS_CUTOFF_MUL_MAX = 1.6; // hard hit -> brighter
 
+// ==================== PITCH / SCALE (§2.2 — A3 / A7) ====================
+// Every instrument draws from ONE major-pentatonic set rooted on C, so the
+// whole board agrees with the C-G-C drone pad and with itself. The per-
+// instrument base frequencies live in instruments.ts (INSTRUMENT_BASE_HZ) and
+// are all powers of two times C; the uniform keyRatio then transposes the whole
+// world together.
+
+export const PENTATONIC_RATIOS: readonly number[] = [1, 1.125, 1.25, 1.5, 1.667];
+
+// A3: the per-hit random octave jump used to span FOUR octaves (x0.5 .. x4).
+// Against fixed-Hz filter cutoffs that put up to ~45dB of hit-to-hit loudness
+// NOISE on top of velocity's 12dB, so the physics->sound causality was
+// inaudible under it. Two octaves keeps the "different note every hit"
+// character while leaving velocity in charge of loudness. Note the geometric
+// mean is 2^0.5 both before ({-1,0,1,2}) and after ({0,1}), so the average
+// register of every instrument is unchanged.
+export const OCTAVE_MULTIPLIERS: readonly number[] = [1, 2];
+
+// A3: filter cutoffs are expressed as a MULTIPLE OF THE VOICE'S FUNDAMENTAL,
+// never as a fixed Hz value, so a low octave draw is filtered exactly like a
+// high one. The result is clamped into the audible range (a BiquadFilterNode
+// clamps to Nyquist anyway; clamping here keeps the behaviour predictable).
+export const FILTER_CUTOFF_MIN_HZ = 20;
+export const FILTER_CUTOFF_MAX_HZ = 18000;
+
+// ==================== CONTEXT RESUME (A4) ====================
+// While the audio context is not running, EVERY call must be free to issue a
+// fresh Tone.start(): per the Web Audio spec an AudioContext.resume() made
+// outside a valid user gesture is appended to [[pending promises]] and may
+// never settle, so memoising an in-flight attempt could poison the whole
+// session. Non-gesture callers (collisions, visibilitychange) are throttled to
+// this interval so a combo storm can't spam start(); real user gestures are
+// never throttled.
+export const RESUME_THROTTLE_MS = 250;
+
 // ==================== REVERB BLOOM (§2.4) ====================
 // First hit after a long silence blooms the reverb send to max, then settles
 // back over a few seconds ("breaking the silence").

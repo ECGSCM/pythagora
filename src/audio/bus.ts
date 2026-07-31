@@ -107,6 +107,16 @@ export class AudioBus {
     this.input = new Tone.Gain(1);
     this.input.connect(this.echo);
 
+    // A1: `Tone.getDestination()` is a per-CONTEXT singleton — it is created
+    // with the AudioContext and outlives every AudioBus/AudioEngine instance in
+    // the page. setMuted() therefore writes to state that is effectively
+    // process-global, while the UI's mute flag is React state that resets on
+    // remount. Muting, leaving (which unmounts the canvas and disposes the
+    // engine) and re-entering used to leave the Destination muted forever with
+    // the UI insisting audio was on. Mute belongs to the ENGINE's lifetime, so
+    // a freshly constructed bus always starts audible...
+    Tone.getDestination().mute = false;
+
     this.startReverbMonitoring();
   }
 
@@ -184,7 +194,12 @@ export class AudioBus {
 
   // ==================== MUTE / VOLUME ====================
 
-  /** True mute via the global destination — independent of master volume (A3/A4). */
+  /**
+   * True mute via the global destination — independent of master volume
+   * (A3/A4). NOTE: the Destination is context-owned, not bus-owned; the
+   * constructor and dispose() both reset it to `false` so this flag can never
+   * outlive the engine that set it (A1).
+   */
   setMuted(muted: boolean): void {
     Tone.getDestination().mute = muted;
   }
@@ -215,6 +230,15 @@ export class AudioBus {
   // ==================== LIFECYCLE ====================
 
   dispose(): void {
+    // ...and a disposed bus never leaves the shared Destination muted (A1).
+    // Without this, `M` then Esc strands the whole page in silence: the next
+    // engine builds a brand-new graph into a Destination that is still muted.
+    try {
+      Tone.getDestination().mute = false;
+    } catch {
+      // Context already torn down — nothing to un-mute.
+    }
+
     if (this.reverbInterval !== null) {
       clearInterval(this.reverbInterval);
       this.reverbInterval = null;

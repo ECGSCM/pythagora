@@ -14,6 +14,7 @@ import {
   HARMONY_STEP_INTERVAL,
   MASTER_VOLUME_MAX_DB,
   MASTER_VOLUME_MIN_DB,
+  RESUME_THROTTLE_MS,
   VELOCITY_GAIN_MAX,
   VELOCITY_GAIN_MIN,
   VELOCITY_OFFSET,
@@ -51,6 +52,35 @@ function mapInstrument(event: CollisionEvent): InstrumentName {
   return 'impact';
 }
 
+/**
+ * A6 — sliding-window admission control for voice-triggering collisions.
+ *
+ * Mutates `times` in place: evicts entries older than the window, then admits
+ * `now` ONLY if the window still has room. That "only" is the fix. The old code
+ * pushed every collision into the window and compared afterwards, so at any
+ * sustained rate above the budget the window stayed permanently full of DROPPED
+ * events and the check never went false again — every single collision went
+ * silent instead of thinning to `budget` voices per window. On a dense board
+ * that read as "the modules stopped making noise".
+ *
+ * Pure and side-effect-free apart from `times`, so the limiter is unit-testable
+ * without touching Tone.
+ *
+ * @returns true when the event may play (and has been recorded).
+ */
+export function admitAudioEvent(
+  times: number[],
+  now: number,
+  windowMs: number,
+  budget: number
+): boolean {
+  const cutoff = now - windowMs;
+  while (times.length > 0 && times[0] <= cutoff) times.shift();
+  if (times.length >= budget) return false;
+  times.push(now);
+  return true;
+}
+
 // Collision impact velocity -> voice gain (0..1), clamped so even soft hits are
 // audible and hard hits don't overdrive.
 function mapVelocity(velocity: number): number {
@@ -78,7 +108,8 @@ export class AudioEngine {
   /** Circle-of-fifths engine driving key transposition (§2.2). */
   readonly harmony: HarmonyEngine;
 
-  private resumePromise: Promise<void> | null = null;
+  /** Wall clock of the last Tone.start() attempt; throttles non-gesture calls (A4). */
+  private lastResumeAttemptMs = 0;
   private resumeErrorLogged = false;
   // Once disposed, in-flight resumes and incoming collisions must no-op: the
   // shared global AudioContext can resolve a pending Tone.start() long after
@@ -128,9 +159,11 @@ export class AudioEngine {
       this.mediaPin.ensure();
       this.mediaPin.refresh();
       // Tone.start() calls context.resume() synchronously within this handler,
-      // which satisfies the mobile gesture requirement.
+      // which satisfies the mobile gesture requirement. `userInitiated` so this
+      // path is NEVER throttled or blocked by an earlier non-gesture attempt —
+      // calling start() inside a real gesture is this handler's entire job (A4).
       if (Tone.getContext().state !== 'running') {
-        void this.resume();
+        void this.resume(true);
       }
     };
     this.gestureUnlock = unlock;
@@ -142,8 +175,9 @@ export class AudioEngine {
     const onVisible = () => {
       if (document.visibilityState === 'visible' && !this.disposed) {
         // iOS marks the context 'interrupted'/suspended while backgrounded and
-        // pauses media elements; nudge both back on return.
-        void this.resume();
+        // pauses media elements; nudge both back on return. Also user-initiated
+        // (and rare), so it skips the throttle.
+        void this.resume(true);
         this.mediaPin.refresh();
       }
     };
@@ -172,32 +206,50 @@ export class AudioEngine {
   }
 
   /**
-   * Start (or await an in-flight start of) the audio context. Safe to call
-   * repeatedly and never rejects — failures are swallowed and logged once, so
-   * there is no unhandled promise (A11).
+   * Start the audio context. Safe to call repeatedly and never rejects —
+   * failures are swallowed and logged once, so there is no unhandled promise
+   * (A11).
+   *
+   * A4: this deliberately does NOT memoise an in-flight attempt. Per the Web
+   * Audio spec, `AudioContext.resume()` called without a valid user gesture is
+   * appended to [[pending promises]] and may NEVER settle — and the default
+   * first-load ordering hits exactly that, because the engine is constructed in
+   * an effect/microtask (outside any gesture) and resumes immediately. Caching
+   * that promise meant the gesture handler, the visibilitychange hook and every
+   * collision all awaited the same dead promise and `Tone.start()` was never
+   * called again for the whole session: permanent silence.
+   *
+   * So while the context is not running, every call is free to issue a fresh
+   * `Tone.start()`. Only a cheap wall-clock throttle keeps a collision storm
+   * from spamming it, and `userInitiated` calls — real user gestures, whose
+   * whole purpose is to call start() from inside the gesture — bypass the
+   * throttle. Note `Tone.start()` is invoked synchronously before the first
+   * await, so the gesture is still "live" when resume() reaches the context.
+   *
+   * @param userInitiated true when called from a user gesture / tab return.
    */
-  async resume(): Promise<void> {
+  async resume(userInitiated = false): Promise<void> {
     if (this.disposed) return;
     if (Tone.getContext().state === 'running') {
       this.startDroneIfRunning();
       return;
     }
-    if (!this.resumePromise) {
-      this.resumePromise = Tone.start()
-        .then(() => {
-          this.resumePromise = null;
-          // The drone must only start once the context is actually running.
-          this.startDroneIfRunning();
-        })
-        .catch((error: unknown) => {
-          this.resumePromise = null;
-          if (!this.resumeErrorLogged) {
-            this.resumeErrorLogged = true;
-            console.warn('AudioEngine: audio context could not start yet', error);
-          }
-        });
+
+    const now = Date.now();
+    if (!userInitiated && now - this.lastResumeAttemptMs < RESUME_THROTTLE_MS) return;
+    this.lastResumeAttemptMs = now;
+
+    try {
+      await Tone.start();
+    } catch (error: unknown) {
+      if (!this.resumeErrorLogged) {
+        this.resumeErrorLogged = true;
+        console.warn('AudioEngine: audio context could not start yet', error);
+      }
+      return;
     }
-    return this.resumePromise;
+    // The drone must only start once the context is actually running.
+    this.startDroneIfRunning();
   }
 
   /** Start the drone iff the context is running; start() self-guards re-entry. */
@@ -233,8 +285,20 @@ export class AudioEngine {
     // still swells the tail even when its voices are budgeted out.
     this.bus.onCollision(event.velocity);
 
-    // Audio event budget: drop the excess BEFORE any per-voice Tone work.
-    if (this.overAudioBudget()) return;
+    // Audio event budget: drop the excess BEFORE any per-voice Tone work. Only
+    // ADMITTED events are recorded in the window (A6), so a sustained overload
+    // thins down to AUDIO_EVENTS_PER_100MS voices per window instead of
+    // steady-stating above the threshold and silencing everything.
+    if (
+      !admitAudioEvent(
+        this.recentEventTimes,
+        Date.now(),
+        AUDIO_EVENT_WINDOW_MS,
+        AUDIO_EVENTS_PER_100MS
+      )
+    ) {
+      return;
+    }
 
     const instrument = mapInstrument(event);
     const velocityGain = mapVelocity(event.velocity);
@@ -245,20 +309,6 @@ export class AudioEngine {
     const pitch = makePitchContext(keyRatioForRoot(this.harmony.getCurrentHarmony().root));
     this.voices.play(instrument, velocityGain, brightness, pitch);
     this.drone.onCollision(instrument);
-  }
-
-  /**
-   * Record this collision in the sliding window and report whether it exceeds
-   * the per-window voice budget. Old timestamps are evicted in place so the
-   * array never grows unbounded.
-   */
-  private overAudioBudget(): boolean {
-    const now = Date.now();
-    const cutoff = now - AUDIO_EVENT_WINDOW_MS;
-    const times = this.recentEventTimes;
-    while (times.length > 0 && times[0] <= cutoff) times.shift();
-    times.push(now);
-    return times.length > AUDIO_EVENTS_PER_100MS;
   }
 
   // ==================== PASSTHROUGHS ====================
