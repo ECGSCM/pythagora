@@ -252,7 +252,14 @@ function App() {
       <Box sx={{
         display: 'flex',
         flexDirection: 'column',
+        // 100vh on iOS Safari means the viewport with the browser chrome
+        // HIDDEN, so while the bottom toolbar is showing, the last ~15% of
+        // this box sits underneath it — and body has overflow:hidden, so it
+        // could not even be scrolled into view. That is where the module
+        // palette lives, which is why it was unreachable on a phone. dvh
+        // tracks the viewport actually being displayed.
         height: '100vh',
+        '@supports (height: 100dvh)': { height: '100dvh' },
         background: 'linear-gradient(135deg, #0A0A0F 0%, #1A1A2E 50%, #16213E 100%)'
       }}>
         {/* Main 3D Canvas */}

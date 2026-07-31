@@ -26,7 +26,12 @@ body {
   margin: 0;
   padding: 0;
   min-width: 320px;
+  /* dvh tracks the viewport actually on screen; 100vh on iOS Safari is the
+     chrome-hidden height, which pushes the bottom of the page under the
+     browser toolbar. The 100vh line stays as the fallback for engines
+     without dvh — they simply ignore the second declaration. */
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   background: #000000;
 }

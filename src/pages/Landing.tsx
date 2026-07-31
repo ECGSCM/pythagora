@@ -13,6 +13,7 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, lastSession }) => {
   return (
     <Box sx={{
       minHeight: '100vh',
+      '@supports (min-height: 100dvh)': { minHeight: '100dvh' },
       background: '#000000',
       display: 'flex',
       alignItems: 'center',

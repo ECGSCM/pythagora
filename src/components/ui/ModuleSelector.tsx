@@ -23,7 +23,10 @@ export function ModuleSelector({ selectedNodeType, onSelect }: ModuleSelectorPro
     <MUIBox
       sx={{
         position: 'absolute',
-        bottom: { xs: 10, sm: 20 },
+        // Clear the home indicator when the page is laid out edge-to-edge
+        // (installed PWA). env() resolves to 0 elsewhere, so this is a no-op
+        // in a normal browser tab.
+        bottom: { xs: 'calc(10px + env(safe-area-inset-bottom))', sm: 20 },
         left: { xs: 10, sm: 'auto' },
         right: { xs: 10, sm: 20 },
         background: '#000000',
