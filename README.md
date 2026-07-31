@@ -19,9 +19,13 @@ for the full aesthetic spec.
   (Ground/Pad/Air) plays continuously; every 8 collisions the harmonic key
   steps around the circle of fifths, and the drone's Pad layer crossfades to
   follow. Collision pitch is drawn from the current key's pentatonic scale.
-- **Velocity-sensitive voices** — harder hits are louder *and* brighter
-  (velocity drives both amplitude and a lowpass cutoff), so the physics and
-  the sound share one cause.
+- **Velocity-sensitive voices** — harder hits are louder *and* brighter, so
+  the physics and the sound share one cause. Velocity drives amplitude on
+  every voice, and on the filtered ones it also sweeps the filter open
+  (bell, funnel and the fallback impact voice deliberately take amplitude
+  only — the bell's filter is already swept by its own LFO). Filter cutoffs
+  track each voice's own fundamental, so the per-hit octave draw changes the
+  pitch without changing the loudness.
 - **Bloom "Sound is Light" visuals** — a WebGL post-processing stack (bloom,
   vignette, film grain) makes marbles glow like light and hit flashes bloom
   with the same decay curve as their sound's release.

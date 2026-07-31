@@ -421,7 +421,11 @@ export function getDefaultParams(
 ): Record<string, string | number | string[]> {
   switch (moduleType) {
     case 'ramp':
-      return { angle: 15, material: 'wood' };
+      // Reads MODULES.ramp.defaultAngle rather than repeating the number:
+      // GhostPreview rotates the ramp's preview by that same constant, so a
+      // literal here would silently break the "what you saw is what you get"
+      // guarantee the moment one of the two was changed and the other wasn't.
+      return { angle: MODULES.ramp.defaultAngle, material: 'wood' };
     case 'bumper':
       return { pitch: 'C4', resonance: 0.8 };
     case 'chime':
