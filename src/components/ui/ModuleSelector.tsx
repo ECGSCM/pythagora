@@ -49,21 +49,27 @@ export function ModuleSelector({ selectedNodeType, onSelect }: ModuleSelectorPro
           mb: { xs: 0.2, sm: 0.325 },
         }}
       >
-        MODULES (1-8)
+        MODULES
+        {/* The "(1-8)" is a keyboard hint, so it only earns its space where
+            there are keys to press. */}
+        <MUIBox component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+          {' (1-8)'}
+        </MUIBox>
       </Typography>
       <MUIBox
         sx={{
-          display: 'flex',
-          // Mobile (§4.3): a single non-wrapping, swipeable row instead of the
-          // desktop wrap-grid; the scrollbar is hidden so it reads as a bare
-          // strip of touch targets rather than a browser-chrome scroll area.
-          flexWrap: { xs: 'nowrap', sm: 'wrap' },
-          overflowX: { xs: 'auto', sm: 'visible' },
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': { display: 'none' },
+          // Mobile (§4.3): a 4x2 grid of 44px touch targets. This used to be a
+          // single non-wrapping row with overflow-x and a deliberately hidden
+          // scrollbar — but eight 44px buttons plus gaps need 380px against a
+          // ~355px content box on a 390px phone, so the eighth module (AXIS)
+          // sat past the right edge with no scrollbar to hint that it was
+          // reachable at all: one of the eight placeable modules was simply
+          // invisible. A grid keeps every module on screen at full touch size.
+          display: { xs: 'grid', sm: 'flex' },
+          gridTemplateColumns: { xs: 'repeat(4, 44px)', sm: 'none' },
+          flexWrap: { sm: 'wrap' },
           gap: { xs: 0.5, sm: 0.975 },
-          justifyContent: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'center',
           minWidth: { xs: 'auto', sm: 208 },
         }}
       >

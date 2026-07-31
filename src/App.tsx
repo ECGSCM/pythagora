@@ -282,6 +282,11 @@ function App() {
             bottom: 20,
             left: 20,
             maxWidth: 280,
+            // Desktop only: this card lists nothing but keyboard shortcuts, so
+            // on a phone it is inapplicable AND unclosable (H is itself a key).
+            // It was covering most of the play area and colliding with the
+            // module palette along the bottom edge.
+            display: { xs: 'none', sm: 'block' },
             background: '#000000',
             backdropFilter: 'blur(10px)',
             border: '1px solid #333333',
