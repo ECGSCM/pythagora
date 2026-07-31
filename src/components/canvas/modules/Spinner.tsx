@@ -3,7 +3,7 @@ import { Box, Cylinder } from '@react-three/drei';
 import { useCompoundBody } from '@react-three/cannon';
 import * as THREE from 'three';
 import { MODULES, breathPhaseFromPosition } from '../../../config/world';
-import { useEmissiveBreath } from '../hooks';
+import { useHitFlash } from '../hooks';
 import type { StaticModuleProps, Vec3 } from '../types';
 
 // Shared paddle-bar mesh for the Spinner.
@@ -51,7 +51,13 @@ export const Spinner = React.memo(({ position, nodeId, params }: StaticModulePro
     api.angularVelocity.set(0, 0, speed * cfg.speedFactor);
   }, [api.angularVelocity, speed, cfg.speedFactor]);
 
-  const hubMatRef = useEmissiveBreath(breathPhaseFromPosition(position));
+  const hubMatRef = useHitFlash(
+    nodeId,
+    cfg.hubColor,
+    cfg.flashColor,
+    cfg.flashDurationMs,
+    breathPhaseFromPosition(position),
+  );
 
   return (
     <group ref={ref}>

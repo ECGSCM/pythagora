@@ -2,7 +2,7 @@ import React from 'react';
 import { Cylinder } from '@react-three/drei';
 import { useCylinder } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES, breathPhaseFromPosition } from '../../../config/world';
+import { MODULES, LABEL_OFFSET, breathPhaseFromPosition } from '../../../config/world';
 import { useHitFlash } from '../hooks';
 import { SceneLabel } from '../SceneLabel';
 import type { StaticModuleProps } from '../types';
@@ -37,7 +37,13 @@ export const Bell = React.memo(({ position, nodeId }: StaticModuleProps) => {
           emissiveIntensity={0.1}
         />
       </Cylinder>
-      <SceneLabel position={[0, 0, 1.2]} fontSize={0.3} color="white" anchorX="center" anchorY="middle">
+      <SceneLabel
+        position={[0, 0, LABEL_OFFSET.bell]}
+        fontSize={0.3}
+        color="white"
+        anchorX="center"
+        anchorY="middle"
+      >
         ❖
       </SceneLabel>
     </group>

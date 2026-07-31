@@ -70,6 +70,9 @@ export const Marble = React.memo(({ id, position, evict = false, onCollide, onSe
   const ascGeomRef = useRef<THREE.BufferGeometry>(null);
   const ascMatRef = useRef<THREE.PointsMaterial>(null);
   const ascPositions = useMemo(() => new Float32Array(MARBLE.ascensionCount * 3), []);
+  // Scratch matrix for the ascension shrink (see settling branch below) — a
+  // single reused instance, not allocated per frame.
+  const settleMatrix = useMemo(() => new THREE.Matrix4(), []);
 
   // Register the live position vector so CameraFlow can track this marble
   // without a React re-render; unregister on unmount.
@@ -139,7 +142,31 @@ export const Marble = React.memo(({ id, position, evict = false, onCollide, onSe
       settleElapsed.current += delta;
       const p = Math.min(1, settleElapsed.current / MARBLE.settleFadeSec);
       // Scale down and swell emissive (up then out) as it dissolves.
-      if (mesh) mesh.scale.setScalar(Math.max(0.001, 1 - p));
+      if (mesh) {
+        mesh.scale.setScalar(Math.max(0.001, 1 - p));
+        // @react-three/cannon's PhysicsProvider drives mesh.matrix directly
+        // (matrixAutoUpdate is permanently false once physics takes over) and
+        // only recomposes it from mesh.scale when the physics worker reports
+        // an active body (frameHandler: `if (!active) return;` before the
+        // per-body apply() that reads ref.scale). cannon-es sleeps every body
+        // — including static geometry — after ~1s below its own
+        // sleepSpeedLimit (default 0.1), which is tighter/faster than this
+        // marble's own rest detection (MARBLE.restSpeed 0.15 / restSeconds
+        // 2.5s). So by the time ascension starts, the world has very likely
+        // already gone fully asleep (hasActiveBodies=false), apply() stops
+        // running for every body, and the scale set above would otherwise
+        // never reach the GPU — the marble just pops out of existence at
+        // ascension's end instead of shrinking. None of the physics setters
+        // used to freeze the body (mass/velocity/collisionResponse below)
+        // call wakeUp() either, so the world doesn't wake itself back up.
+        // Recomposing the matrix ourselves here — every settling frame, using
+        // the frozen settlePos rather than the physics position buffer —
+        // bypasses that gate entirely and is safe to do even on frames where
+        // cannon's own apply() ALSO runs (harmless, idempotent overwrite with
+        // the same values, since apply() reads this same mesh.scale).
+        settleMatrix.compose(settlePos, mesh.quaternion, mesh.scale);
+        mesh.matrix.copy(settleMatrix);
+      }
       if (matRef.current) {
         matRef.current.emissiveIntensity =
           MARBLE.emissiveIntensityBase + Math.sin(p * Math.PI) * MARBLE.settleEmissivePeak;

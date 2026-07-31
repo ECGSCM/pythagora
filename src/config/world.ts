@@ -134,6 +134,8 @@ export const MODULES = {
     defaultAngle: 15, // degrees
     material: { friction: 0.05, restitution: 0.2 },
     color: '#3A3A3A',
+    flashColor: '#E8E6E0', // moonlight (subtle swap, not pure white)
+    flashDurationMs: 200,
     roughness: 0.9,
     metalness: 0.1,
   },
@@ -163,12 +165,16 @@ export const MODULES = {
     defaultSpeed: 1.0,
     speedFactor: 1.5, // angularVelocity = speed * speedFactor
     hubColor: '#5A5A5A',
+    flashColor: '#E8E6E0', // moonlight (subtle swap, not pure white)
+    flashDurationMs: 300,
     paddleColor: '#6A6A6A',
     paddleEmissive: '#5A5A5A',
   },
   funnel: {
     args: [2, 0.3, 2] as Vec3,
     color: '#4A4A4A',
+    flashColor: '#E8E6E0', // moonlight (subtle swap, not pure white)
+    flashDurationMs: 500,
     metalness: 0.7,
     roughness: 0.3,
   },
@@ -180,8 +186,19 @@ export const MODULES = {
     plankMaterial: { friction: 0.4, restitution: 0.3 },
     postArgs: [0.18, 0.4, 1.2, 12] as CylinderArgs,
     postOffsetY: -0.6, // post sits below the plank pivot
-    hingePivotB: [0, 0.6, 0] as Vec3, // top of the post (plank rotates about world Z)
+    // Hinge pivot (C6): pinned ABOVE the plank's own centre of mass (in the
+    // plank's local frame) rather than at it, so the plank hangs like a
+    // pendulum below the pivot and gravity produces a restoring torque back
+    // to level — a plank pinned at its own centre has zero restoring torque
+    // at any angle (neutral equilibrium) and never re-levels. hingePivotB is
+    // raised by the same amount (relative to the post's fixed top-of-post
+    // reference) so the mechanical pivot point in world space stays put and
+    // the plank doesn't jump on mount: pivotB.y = hingePivotA.y - postOffsetY.
+    hingePivotA: [0, 0.4, 0] as Vec3, // local point above the plank's CoM
+    hingePivotB: [0, 1.0, 0] as Vec3, // matching fixed point above the post
     plankColor: '#6A6A6A',
+    flashColor: '#E8E6E0', // moonlight (subtle swap, not pure white)
+    flashDurationMs: 500,
     postColor: '#4A4A4A',
   },
   bell: {
@@ -192,6 +209,24 @@ export const MODULES = {
     metalness: 0.9,
     roughness: 0.1,
   },
+} as const;
+
+// In-scene module labels (C3): each label sits along the module's local +Z
+// axis, so it must clear the collider's own radius at the height where the
+// label renders or it ends up inside the opaque solid and fails the depth
+// test (invisible from every angle). For a tapered cylinder the label sits at
+// local y=0, where the radius is the average of radiusTop/radiusBottom — the
+// same figure the visual-bug audit used to diagnose this. LABEL_MARGIN is
+// extra clearance so the glyph reads cleanly outside the surface even as the
+// taper varies radius slightly across the glyph's own height.
+const LABEL_MARGIN = 0.35;
+function cylinderMidRadius(args: readonly number[]): number {
+  return (args[0] + args[1]) / 2;
+}
+export const LABEL_OFFSET = {
+  bumper: cylinderMidRadius(MODULES.bumper.args) + LABEL_MARGIN, // 1.2 -> 1.55
+  bell: cylinderMidRadius(MODULES.bell.args) + LABEL_MARGIN, // 1.25 -> 1.6
+  funnel: cylinderMidRadius(MODULES.funnel.args) + LABEL_MARGIN, // 1.15 -> 1.5
 } as const;
 
 // Hit = light (§3.1/§3.4). A hit spikes emissiveIntensity to a bloom-blowing
@@ -316,25 +351,51 @@ export interface PointLightDef {
   distance: number;
 }
 
-// Rebalanced for the bloom pipeline (§3.1): the pre-bloom values (spot 20 /
-// points 8 / ambient 3) blew the whole frame to white once the composer added
-// emissive bloom. These read as "sacred shafts" through the composer.
+// Rebalanced for the bloom pipeline (§3.1, then re-rebalanced for C1): three
+// r182 has no legacy lighting mode, so point/spot intensity is physically
+// based and falls off as 1/d^2 (three's default decay=2). The rig sits
+// 20-30 world units above the play area (spot at [0,30,0]; rim points at
+// [+-12,25,+-12], distance to play-area modules near [0,~5,0] ~= 26 units),
+// so the old spot=5 / points=2 / ambient=0.7 rebalance left the spotlight and
+// four rim lights contributing well under 1% of scene lighting — only the
+// unattenuated DIVINE_LIGHT.ambient term (0.7, flat, no falloff) was ever
+// visible, reading as a gold wash with no beam and no rim light at all.
+//
+// Point-light irradiance at distance d is intensity/d^2 (ignoring the
+// `distance` cutoff window, which is a no-op here since distance >> d), so a
+// contribution on the order of the base directional light (intensity 1.0)
+// needs intensity ~= d^2. The four rim lights (d ~= 26) use 700 (~1.0 at
+// d=26); the spotlight (~700-900 needed to read through its cone at
+// d ~= 22-30) uses 900 so the cone itself is visibly bright without washing
+// the whole frame (a spotlight's falloff is angularly gated by its cone, so
+// a higher intensity there doesn't flood the rest of the scene the way
+// raising the ambient term would); the closer center golden fill (d ~= 15)
+// only needs ~225, tuned down slightly to 220 to sit as a soft fill rather
+// than a second hard source. DIVINE_LIGHT.ambient itself is cut from 0.7 to
+// 0.2: at 0.7 unattenuated it single-handedly WAS the entire effect (per the
+// audit); at 0.2 it still lifts shadow reads without swamping the now-actually-
+// visible cone and rim lights, which is what should read as "sacred shafts"
+// through the composer. None of these values are high enough on their own to
+// blow the frame to white (the failure mode of the original pre-bloom
+// spot=20/points=8/ambient=3 rig): the spotlight is cone-limited, the rim
+// lights are colour-differentiated and distance-attenuated, and bloom's
+// mipmapBlur keeps any hot spots' halo tight (POSTFX.bloom.levels=4).
 export const DIVINE_LIGHT = {
   spotlight: {
     position: [0, 30, 0] as Vec3,
     angle: 1.5,
     penumbra: 0.2,
-    intensity: 5.0,
+    intensity: 900,
     color: '#FFD700', // golden
   },
   pointLights: [
-    { position: [-12, 25, -12], color: '#FF6B6B', intensity: 2.0, distance: 80 }, // divine red
-    { position: [12, 25, 12], color: '#4ECDC4', intensity: 2.0, distance: 80 }, // divine cyan
-    { position: [-12, 25, 12], color: '#A855F7', intensity: 2.0, distance: 80 }, // divine purple
-    { position: [12, 25, -12], color: '#F472B6', intensity: 2.0, distance: 80 }, // divine pink
-    { position: [0, 20, 0], color: '#FFD700', intensity: 1.2, distance: 60 }, // center golden fill
+    { position: [-12, 25, -12], color: '#FF6B6B', intensity: 700, distance: 80 }, // divine red
+    { position: [12, 25, 12], color: '#4ECDC4', intensity: 700, distance: 80 }, // divine cyan
+    { position: [-12, 25, 12], color: '#A855F7', intensity: 700, distance: 80 }, // divine purple
+    { position: [12, 25, -12], color: '#F472B6', intensity: 700, distance: 80 }, // divine pink
+    { position: [0, 20, 0], color: '#FFD700', intensity: 220, distance: 60 }, // center golden fill
   ] as PointLightDef[],
-  ambient: { intensity: 0.7, color: '#FFD700' },
+  ambient: { intensity: 0.2, color: '#FFD700' },
 } as const;
 
 // ==================== GROUND / SHADOWS ====================

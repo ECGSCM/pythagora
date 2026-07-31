@@ -281,14 +281,26 @@ export const useGameStore = create<GameState>((set, get) => {
 
     marbleCompleted: () => {
       const epoch = sessionEpoch;
+      // marblesCompleted doubles as this completion's identity (C4): it's
+      // already a monotonically increasing counter, so capturing it here lets
+      // the hide-timer below tell "my completion is still the active one"
+      // from "a newer completion already replaced mine" without adding a
+      // separate nonce field (which would also change completionCelebration's
+      // shape and break the store's toEqual assertions in gameStore.test.ts).
+      const marblesCompleted = get().completionCelebration.marblesCompleted + 1;
       set({
-        completionCelebration: {
-          enabled: true,
-          marblesCompleted: get().completionCelebration.marblesCompleted + 1,
-        },
+        completionCelebration: { enabled: true, marblesCompleted },
       });
       setTimeout(() => {
         if (sessionEpoch !== epoch) return;
+        // Only clear if THIS completion is still the current one. Overlapping
+        // completions each arm their own independent timer; without this
+        // guard an older timer could snuff a newer ring half-way through its
+        // animation (C4) — the newer completion already restarted the
+        // animation (see CompletionCelebration's marblesCompleted-keyed
+        // reset), and only the timer belonging to the CURRENT completion
+        // should be allowed to turn it off.
+        if (get().completionCelebration.marblesCompleted !== marblesCompleted) return;
         set({ completionCelebration: { ...get().completionCelebration, enabled: false } });
       }, GAMEPLAY.celebrationHideMs);
     },

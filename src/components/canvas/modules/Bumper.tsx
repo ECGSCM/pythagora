@@ -2,7 +2,7 @@ import React from 'react';
 import { Cylinder } from '@react-three/drei';
 import { useCylinder } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES, breathPhaseFromPosition } from '../../../config/world';
+import { MODULES, LABEL_OFFSET, breathPhaseFromPosition } from '../../../config/world';
 import { useHitFlash } from '../hooks';
 import { SceneLabel } from '../SceneLabel';
 import type { StaticModuleProps } from '../types';
@@ -38,7 +38,13 @@ export const Bumper = React.memo(({ position, nodeId, params }: StaticModuleProp
           emissiveIntensity={0.1}
         />
       </Cylinder>
-      <SceneLabel position={[0, 0, 0.4]} fontSize={0.25} color="white" anchorX="center" anchorY="middle">
+      <SceneLabel
+        position={[0, 0, LABEL_OFFSET.bumper]}
+        fontSize={0.25}
+        color="white"
+        anchorX="center"
+        anchorY="middle"
+      >
         ◉ {params.pitch || 'C4'}
       </SceneLabel>
     </group>

@@ -3,7 +3,7 @@ import { Box } from '@react-three/drei';
 import { useBox } from '@react-three/cannon';
 import * as THREE from 'three';
 import { MODULES, breathPhaseFromPosition } from '../../../config/world';
-import { useEmissiveBreath } from '../hooks';
+import { useHitFlash } from '../hooks';
 import type { StaticModuleProps } from '../types';
 
 // Ramp — guides marbles down a slope. The tilt must live on the physics body,
@@ -23,7 +23,13 @@ export const Ramp = React.memo(({ position, nodeId, params }: StaticModuleProps)
     userData: { nodeId, moduleType: 'ramp' as const },
   }));
 
-  const matRef = useEmissiveBreath(breathPhaseFromPosition(position));
+  const matRef = useHitFlash(
+    nodeId,
+    cfg.color,
+    cfg.flashColor,
+    cfg.flashDurationMs,
+    breathPhaseFromPosition(position),
+  );
 
   return (
     <group ref={ref}>

@@ -12,6 +12,13 @@ export const CompletionCelebration = React.memo(() => {
   const groupRef = useRef<THREE.Group>(null);
   const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const enabled = useGameStore((s) => s.completionCelebration.enabled);
+  // marblesCompleted is a monotonically increasing per-completion identity
+  // (C4): a plain enabled false->true edge misses a SECOND completion that
+  // lands while the first one's ring is still animating (enabled stays true
+  // the whole time, so there's no edge to catch), silently swallowing it.
+  // Keying the restart off this counter instead means every new completion
+  // — even one that arrives mid-animation — restarts the ring.
+  const marblesCompleted = useGameStore((s) => s.completionCelebration.marblesCompleted);
   const clearCelebration = useGameStore((s) => s.clearCelebration);
 
   // Ref-driven exactly like Ripple: scale/opacity come from the CURRENT
@@ -19,15 +26,17 @@ export const CompletionCelebration = React.memo(() => {
   // frame loop, guarded by a one-shot ref — never inside a setState updater.
   const progressRef = useRef(0);
   const clearedRef = useRef(false);
-  const prevEnabledRef = useRef(false);
+  const prevMarblesCompletedRef = useRef(0);
 
   useFrame((_state, delta) => {
-    // Reset on the enabled false -> true transition (a new celebration).
-    if (enabled && !prevEnabledRef.current) {
+    // Reset whenever a new completion arrives (identified by marblesCompleted
+    // ticking up) while enabled — not just on the false -> true edge, so an
+    // overlapping completion restarts the ring instead of being swallowed.
+    if (enabled && marblesCompleted !== prevMarblesCompletedRef.current) {
       progressRef.current = 0;
       clearedRef.current = false;
+      prevMarblesCompletedRef.current = marblesCompleted;
     }
-    prevEnabledRef.current = enabled;
 
     if (!enabled || !groupRef.current) return;
 

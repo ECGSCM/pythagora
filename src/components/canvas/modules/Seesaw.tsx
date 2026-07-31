@@ -3,7 +3,7 @@ import { Box, Cylinder } from '@react-three/drei';
 import { useBox, useCylinder, useHingeConstraint } from '@react-three/cannon';
 import * as THREE from 'three';
 import { MODULES, breathPhaseFromPosition } from '../../../config/world';
-import { useEmissiveBreath } from '../hooks';
+import { useHitFlash } from '../hooks';
 import type { StaticModuleProps } from '../types';
 
 // Seesaw — a real see-saw: a dynamic plank hinged onto a static pivot post,
@@ -29,17 +29,27 @@ export const Seesaw = React.memo(({ position, nodeId }: StaticModuleProps) => {
     args: cfg.postArgs,
   }));
 
-  // Pin the plank's center to the top of the post; free rotation about Z.
-  // Connected bodies don't collide with each other (cannon default), so the
-  // plank swings cleanly on the post.
+  // Pin a point ABOVE the plank's own center of mass (hingePivotA) to a
+  // matching fixed point above the post (hingePivotB) — free rotation about
+  // Z. Connected bodies don't collide with each other (cannon default), so
+  // the plank swings cleanly on the post. Pinning above the CoM (rather than
+  // at it) makes the plank hang like a pendulum below the pivot, so gravity
+  // supplies a restoring torque back to level (C6) — pinned at the CoM the
+  // plank has zero restoring torque at any angle and never re-levels.
   useHingeConstraint(plankRef, baseRef, {
-    pivotA: [0, 0, 0],
+    pivotA: cfg.hingePivotA,
     axisA: [0, 0, 1],
     pivotB: cfg.hingePivotB,
     axisB: [0, 0, 1],
   });
 
-  const matRef = useEmissiveBreath(breathPhaseFromPosition(position));
+  const matRef = useHitFlash(
+    nodeId,
+    cfg.plankColor,
+    cfg.flashColor,
+    cfg.flashDurationMs,
+    breathPhaseFromPosition(position),
+  );
 
   return (
     <>

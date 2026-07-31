@@ -64,6 +64,34 @@ export default defineConfig({
                 statuses: [0, 200]
               }
             }
+          },
+          {
+            // troika-three-text (drei's <Text>, wrapped by SceneLabel) resolves
+            // fonts per-codepoint from this jsdelivr-hosted data package. Without
+            // a runtime-caching rule for it, every in-scene label — the combo
+            // Roman numeral, "PERFECT", the completion checkmark, the Aurora key
+            // letter, every module label — silently renders nothing offline: the
+            // suspended preloadFont promise never settles and each label's
+            // <Suspense fallback={null}> just stays on its fallback forever.
+            // CacheFirst (mirroring the google-fonts rule above) means the first
+            // online load populates the cache and every later render — including
+            // fully offline, which is the whole point of "works without a
+            // network connection after first load" — is served from it.
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/gh\/lojjic\/unicode-font-resolver@.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'troika-font-data-cache',
+              expiration: {
+                // The data package is split into many small per-codepoint-range
+                // chunks; this scene only ever touches a handful of Latin/symbol
+                // glyphs, but 100 gives headroom without caching unboundedly.
+                maxEntries: 100,
+                maxAgeSeconds: 365 * 24 * 60 * 60
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
           }
         ]
       }

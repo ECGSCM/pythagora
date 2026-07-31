@@ -2,8 +2,8 @@ import React from 'react';
 import { Cylinder } from '@react-three/drei';
 import { useCylinder } from '@react-three/cannon';
 import * as THREE from 'three';
-import { MODULES, breathPhaseFromPosition } from '../../../config/world';
-import { useEmissiveBreath } from '../hooks';
+import { MODULES, LABEL_OFFSET, breathPhaseFromPosition } from '../../../config/world';
+import { useHitFlash } from '../hooks';
 import { SceneLabel } from '../SceneLabel';
 import type { StaticModuleProps } from '../types';
 
@@ -17,7 +17,13 @@ export const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
     userData: { nodeId, moduleType: 'funnel' as const },
   }));
 
-  const matRef = useEmissiveBreath(breathPhaseFromPosition(position));
+  const matRef = useHitFlash(
+    nodeId,
+    cfg.color,
+    cfg.flashColor,
+    cfg.flashDurationMs,
+    breathPhaseFromPosition(position),
+  );
 
   return (
     <group ref={ref}>
@@ -31,7 +37,13 @@ export const Funnel = React.memo(({ position, nodeId }: StaticModuleProps) => {
           emissiveIntensity={0.1}
         />
       </Cylinder>
-      <SceneLabel position={[0, 0, 1.1]} fontSize={0.25} color="white" anchorX="center" anchorY="middle">
+      <SceneLabel
+        position={[0, 0, LABEL_OFFSET.funnel]}
+        fontSize={0.25}
+        color="white"
+        anchorX="center"
+        anchorY="middle"
+      >
         ◈
       </SceneLabel>
     </group>
