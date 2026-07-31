@@ -28,12 +28,19 @@ type EchoMode = 'off' | 'short' | 'long';
 // down; above 55fps steps it up. iterations=10 * ms=250 (both defaults) means
 // a decision needs ~2.5s of sustained samples — PerformanceMonitor's own
 // debounce, so no hand-rolled timer is needed here.
+//
+// Deliberately NO `flipflops`/`onFallback` (drei's default is Infinity, i.e.
+// the fallback can never latch). `api.flipped` counts BOTH inclines and
+// declines, and `flipped > flipflops` sets `api.fallback = true`, which also
+// stops all further sampling. With a constant upper bound of 55, a machine
+// comfortably holding 60fps fires onIncline on EVERY ~2.5s window, so a
+// finite flipflops count was reached after a few seconds of a perfectly
+// healthy session — the old flipflops={3} + onFallback(setQualityTier('low'))
+// killed bloom/grain/dpr ~10s in and never recovered, because sampling had
+// stopped. Adaptive quality is now stepping only: onDecline/onIncline move the
+// tier one step at a time and remain fully reversible.
 const handlePerfDecline = () => useGameStore.getState().stepQualityTierDown();
 const handlePerfIncline = () => useGameStore.getState().stepQualityTierUp();
-// flipflops={3}: if the tier has already flip-flopped (declined/inclined) 3
-// times, PerformanceMonitor calls onFallback once and stops sampling — pin to
-// 'low' rather than keep oscillating.
-const handlePerfFallback = () => useGameStore.getState().setQualityTier('low');
 const perfMonitorBounds = (): [number, number] => [40, 55];
 
 interface Physics3DCanvasProps {
@@ -42,6 +49,12 @@ interface Physics3DCanvasProps {
   onModuleTypeChange?: (moduleType: PatchNode['type']) => void;
   selectedNodeType?: PatchNode['type'];
   onClearAll?: () => void;
+  /** Monotonic "clear all" counter owned by App: bumped by handleClearAll at
+   * the same time the module list is emptied. Threaded down to <Scene>, which
+   * also owns live marbles / evictions / ripples, so C really does clear the
+   * whole board and not just the modules (README: "Clear all placed modules
+   * and marbles"). */
+  clearToken?: number;
   onToggleHelp?: () => void;
   onExit?: (summary: SessionSummary) => void;
   /** Presence (§4.1): a single hook instance lives in App and is threaded down
@@ -60,6 +73,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
     onModuleTypeChange,
     selectedNodeType = 'marble',
     onClearAll,
+    clearToken = 0,
     onToggleHelp,
     onExit,
     present,
@@ -286,10 +300,8 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
               where in the tree it sits — but both must be Canvas descendants. */}
           <PerformanceMonitor
             bounds={perfMonitorBounds}
-            flipflops={3}
             onIncline={handlePerfIncline}
             onDecline={handlePerfDecline}
-            onFallback={handlePerfFallback}
           >
             <QualityController />
             <Suspense fallback={null}>
@@ -312,6 +324,7 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
                   onNodeAdd={onNodeAdd}
                   divineLightActive={divineLightActive}
                   marbleDropTrigger={marbleDropTrigger}
+                  clearToken={clearToken}
                   followCamera={followCamera}
                 />
               </Physics>
@@ -410,9 +423,14 @@ export const Physics3DCanvas: React.FC<Physics3DCanvasProps> = React.memo(
     // compared too — it's App's single usePresence() instance threaded down
     // as a prop, and it changes independently of nodes/selectedNodeType; if
     // it were left out here, a present-state transition from App would be
-    // silently dropped by memo and the overlay would never fade.
+    // silently dropped by memo and the overlay would never fade. Same for
+    // `clearToken`: App bumps it alongside `setNodes([])`, and if it were left
+    // out here the nodes-identity change would re-render this shell with the
+    // STALE token, so <Scene> would never see the bump and the marbles would
+    // survive a "Clear all".
     prevProps.nodes === nextProps.nodes &&
     prevProps.selectedNodeType === nextProps.selectedNodeType &&
+    prevProps.clearToken === nextProps.clearToken &&
     prevProps.present === nextProps.present,
 );
 Physics3DCanvas.displayName = 'Physics3DCanvas';

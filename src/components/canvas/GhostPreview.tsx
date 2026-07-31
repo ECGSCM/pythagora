@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { PatchNode } from '../../types/patch';
@@ -14,37 +14,114 @@ export interface PlacementPoint {
   t: number; // Date.now() when this point was recorded
 }
 
-// If the pointer hasn't moved over the placement plane in this long, the ghost
-// hides — covers "pointer left the canvas" too, since no more move events
-// arrive once that happens (Scene also clears the ref immediately on
-// pointerleave, but this is the backstop).
-const HIDE_AFTER_MS = 150;
 // Confirm pulse duration on a successful placement (scale 1->1.3, fade out).
 const PULSE_MS = 200;
 const BASE_OPACITY = 0.25;
 
-function ghostGeometry(type: PatchNode['type']): React.ReactElement {
-  // Mirrors each module's real collider footprint (config/world.ts MODULES) —
-  // box for the flat/plank shapes, cylinder for the round ones, small sphere
-  // for the marble itself.
+const DEG_TO_RAD = Math.PI / 180;
+
+// Shared look for every mesh a ghost is made of (the spinner is three). The
+// frame loop drives their opacity together by traversing the ghost group, so
+// no per-material ref plumbing is needed.
+const GhostMaterial = () => (
+  <meshBasicMaterial color={PALETTE.moonlight} transparent opacity={BASE_OPACITY} depthWrite={false} />
+);
+
+/** Apply one opacity to every material under the ghost group. */
+function setGhostOpacity(group: THREE.Group, value: number): void {
+  group.traverse((object) => {
+    const material = (object as THREE.Mesh).material as THREE.Material | undefined;
+    if (material && !Array.isArray(material)) material.opacity = value;
+  });
+}
+
+// Ghost shapes mirror each module's REAL body — the same geometry args AND the
+// same orientation the placed body is built with (COMMERCIAL_GRADE_PLAN.md
+// §7C "what you saw is what you get"). Every value is read from config/world.ts
+// MODULES, so the preview and the placed body can't drift apart.
+function GhostShapes({ type }: { type: PatchNode['type'] }): React.ReactElement {
   switch (type) {
     case 'ramp':
-      return <boxGeometry args={MODULES.ramp.args} />;
+      // Ramp.tsx tilts the BODY by params.angle about Z, and a freshly placed
+      // ramp gets getDefaultParams' angle — the same MODULES.ramp.defaultAngle
+      // used here. The old ghost was an axis-aligned box, so the placed ramp
+      // always appeared at an angle the preview never showed.
+      return (
+        <group rotation={[0, 0, MODULES.ramp.defaultAngle * DEG_TO_RAD]}>
+          <mesh>
+            <boxGeometry args={MODULES.ramp.args} />
+            <GhostMaterial />
+          </mesh>
+        </group>
+      );
     case 'seesaw':
-      return <boxGeometry args={MODULES.seesaw.plankArgs} />;
+      // The pivot post is a separate collider with no node identity; the plank
+      // is what a marble actually meets, so the plank is what the ghost shows.
+      return (
+        <mesh>
+          <boxGeometry args={MODULES.seesaw.plankArgs} />
+          <GhostMaterial />
+        </mesh>
+      );
     case 'bumper':
-      return <cylinderGeometry args={MODULES.bumper.args} />;
+      return (
+        <mesh>
+          <cylinderGeometry args={MODULES.bumper.args} />
+          <GhostMaterial />
+        </mesh>
+      );
     case 'chime':
-      return <cylinderGeometry args={MODULES.chime.args} />;
+      return (
+        <mesh>
+          <cylinderGeometry args={MODULES.chime.args} />
+          <GhostMaterial />
+        </mesh>
+      );
     case 'funnel':
-      return <cylinderGeometry args={MODULES.funnel.args} />;
+      return (
+        <mesh>
+          <cylinderGeometry args={MODULES.funnel.args} />
+          <GhostMaterial />
+        </mesh>
+      );
     case 'bell':
-      return <cylinderGeometry args={MODULES.bell.args} />;
+      return (
+        <mesh>
+          <cylinderGeometry args={MODULES.bell.args} />
+          <GhostMaterial />
+        </mesh>
+      );
     case 'spinner':
-      return <cylinderGeometry args={MODULES.spinner.hubVisualArgs} />;
+      // Spinner.tsx builds a compound body pre-rotated 90° about X (hub axis ->
+      // world Z, wheel facing the camera) with two crossing paddle bars
+      // reaching ~3.8 units across. The old ghost was the bare hub disc — ~1.2
+      // units, unrotated, under a third of the real footprint — so the placed
+      // spinner routinely swallowed its neighbours. Mirror the whole body:
+      // same rotation, hub plus both paddles.
+      return (
+        <group rotation={[Math.PI / 2, 0, 0]}>
+          <mesh>
+            <cylinderGeometry args={MODULES.spinner.hubVisualArgs} />
+            <GhostMaterial />
+          </mesh>
+          <mesh>
+            <boxGeometry args={MODULES.spinner.paddleArgsA} />
+            <GhostMaterial />
+          </mesh>
+          <mesh>
+            <boxGeometry args={MODULES.spinner.paddleArgsB} />
+            <GhostMaterial />
+          </mesh>
+        </group>
+      );
     case 'marble':
     default:
-      return <sphereGeometry args={[MARBLE.radius, 16, 16]} />;
+      return (
+        <mesh>
+          <sphereGeometry args={[MARBLE.radius, 16, 16]} />
+          <GhostMaterial />
+        </mesh>
+      );
   }
 }
 
@@ -69,13 +146,10 @@ interface GhostPreviewProps {
 export const GhostPreview = React.memo(({ pointerRef, pulseRef }: GhostPreviewProps) => {
   const selectedModuleType = useGameStore((s) => s.selectedModuleType);
   const groupRef = useRef<THREE.Group>(null);
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
-  const geometry = useMemo(() => ghostGeometry(selectedModuleType), [selectedModuleType]);
 
   useFrame(() => {
     const group = groupRef.current;
-    const mat = matRef.current;
-    if (!group || !mat) return;
+    if (!group) return;
     const now = Date.now();
 
     // A recent placement takes priority: pulse in place instead of tracking
@@ -86,34 +160,30 @@ export const GhostPreview = React.memo(({ pointerRef, pulseRef }: GhostPreviewPr
       group.visible = true;
       group.position.set(pulse.x, pulse.y, 0.05);
       group.scale.setScalar(1 + 0.3 * t);
-      mat.opacity = BASE_OPACITY * (1 - t);
+      setGhostOpacity(group, BASE_OPACITY * (1 - t));
       return;
     }
 
+    // Visibility is driven purely by the explicit pointer-leave signal
+    // (Scene.handlePointerLeave nulls this ref, and r3f does deliver
+    // onPointerLeave for the interaction plane). There is deliberately NO
+    // staleness timeout any more: DOM pointermove only fires on actual motion,
+    // so a time-based check hid the preview the instant the user held still to
+    // line a placement up — precisely when the preview exists to be looked at.
     const pointer = pointerRef.current;
-    const fresh = pointer !== null && now - pointer.t <= HIDE_AFTER_MS;
-    if (!fresh || !pointer) {
+    if (!pointer) {
       group.visible = false;
       return;
     }
     group.visible = true;
     group.scale.setScalar(1);
-    mat.opacity = BASE_OPACITY;
+    setGhostOpacity(group, BASE_OPACITY);
     group.position.set(pointer.x, pointer.y, 0.05);
   });
 
   return (
     <group ref={groupRef} visible={false}>
-      <mesh>
-        {geometry}
-        <meshBasicMaterial
-          ref={matRef}
-          color={PALETTE.moonlight}
-          transparent
-          opacity={BASE_OPACITY}
-          depthWrite={false}
-        />
-      </mesh>
+      <GhostShapes type={selectedModuleType} />
     </group>
   );
 });

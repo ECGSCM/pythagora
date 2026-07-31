@@ -135,6 +135,12 @@ function App() {
   // a full reload) start hidden — see readHelpSeen/writeHelpSeen above.
   const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
   const [notification, setNotification] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
+  // "Clear all" token: modules live here, but live marbles / evictions /
+  // ripples live inside <Scene>'s own state, so clearing has to be broadcast
+  // downward. A monotonic counter (rather than a callback ref) keeps App the
+  // single owner of the action and makes the signal idempotent — Scene simply
+  // reacts when the value it last processed falls behind.
+  const [clearToken, setClearToken] = useState(0);
   const [lastSession, setLastSession] = useState<SessionSummary | null>(null);
 
   // Presence (§4.1): a single hook instance, shared by the help card here and
@@ -212,14 +218,21 @@ function App() {
     });
   }, []);
 
-  // Clear all modules (C key / canvas callback). Also drops any moduleHits
-  // flash timestamps for the removed nodes, so the record doesn't keep
-  // entries for modules that no longer exist (§7C moduleHits hygiene).
+  // Clear all modules AND marbles (C key / canvas callback). Also drops any
+  // moduleHits flash timestamps for the removed nodes, so the record doesn't
+  // keep entries for modules that no longer exist (§7C moduleHits hygiene).
+  //
+  // The token bump is what reaches the marbles: they're mounted components
+  // owned by <Scene>, so emptying `nodes` alone used to leave a dozen orbs
+  // still falling, bouncing and making sound under a toast that claimed
+  // everything was cleared (README documents C as clearing modules *and*
+  // marbles).
   const handleClearAll = useCallback(() => {
     setNodes([]);
+    setClearToken(prev => prev + 1);
     useGameStore.getState().clearModuleHits();
     setNotification({
-      message: 'All modules cleared',
+      message: 'All modules and marbles cleared',
       severity: 'info'
     });
   }, []);
@@ -255,6 +268,7 @@ function App() {
               onModuleTypeChange={handleSelectionChange}
               selectedNodeType={selectedModuleType}
               onClearAll={handleClearAll}
+              clearToken={clearToken}
               onToggleHelp={handleToggleHelp}
               onExit={handleExitToLanding}
               present={present}

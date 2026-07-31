@@ -158,6 +158,62 @@ export function toRomanNumeral(value: number): string {
   return out;
 }
 
+// ==================== PLACEMENT GESTURE (§7C) ====================
+
+/**
+ * Click-vs-drag thresholds for placement on the interaction plane.
+ *
+ * Placement used to fire straight off `pointerdown`, but OrbitControls listens
+ * for `pointerdown` on the very same canvas element and r3f's
+ * `event.stopPropagation()` only prunes r3f's own intersection list — it never
+ * stops the DOM event. So every orbit/pan drag also dropped a marble or a
+ * module at the press point. Placement is therefore decided on pointer-UP, and
+ * only when the whole gesture reads as a click.
+ *
+ * (Input tuning lives here rather than in world.ts's PLACEMENT block: that one
+ * describes the physical placement plane and its clamp bounds, this describes
+ * the pointer gesture that triggers a placement.)
+ */
+export const PLACEMENT_GESTURE = {
+  /** Mouse/pen slop, in CSS px. 6px sits just above the ~5px browsers
+   * themselves use to separate a click from a drag, so an ordinary click —
+   * which almost always moves 0-2px — always places, while an orbit drag
+   * (tens of px) never does. */
+  maxMovePx: 6,
+  /** Touch slop, in CSS px. A finger "tap" routinely wanders 8-10px before
+   * lift-off, so mouse slop applied to touch would make taps unreliable;
+   * 12px is the usual mobile tap slop and is still far below a one-finger
+   * orbit drag. */
+  touchMaxMovePx: 12,
+  /** Upper bound on a click, in ms. Movement is the primary signal (and is
+   * measured as the FURTHEST the pointer ever got from the press point, so a
+   * drag that loops back doesn't sneak through); this only rejects a
+   * press-and-hold that happened to end near where it started. Generous at
+   * 800ms so a slow, deliberate click still places. */
+  maxDurationMs: 800,
+} as const;
+
+/** A completed pointer gesture over the placement plane, reduced to the only
+ * facts the click/drag decision needs. */
+export interface PlacementGesture {
+  /** PointerEvent.pointerType ('mouse' | 'pen' | 'touch' | ...). */
+  pointerType: string;
+  /** Furthest distance, in CSS px, the pointer reached from the press point. */
+  movedPx: number;
+  /** Time from pointerdown to pointerup, in ms. */
+  durationMs: number;
+}
+
+/**
+ * True when a finished gesture should place (a click), false when it was a
+ * camera drag. Pure — the whole decision is unit-tested in isolation.
+ */
+export function isPlacementClick(gesture: PlacementGesture): boolean {
+  const slop =
+    gesture.pointerType === 'touch' ? PLACEMENT_GESTURE.touchMaxMovePx : PLACEMENT_GESTURE.maxMovePx;
+  return gesture.movedPx <= slop && gesture.durationMs <= PLACEMENT_GESTURE.maxDurationMs;
+}
+
 // ==================== PRESENCE (§4.1) ====================
 
 /**
