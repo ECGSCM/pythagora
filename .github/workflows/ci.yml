@@ -5,6 +5,8 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # Manual redeploy of the live site without needing a new commit.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,19 +45,27 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # Publishes the built site to the `gh-pages` branch, which is what this
+  # repository's Pages is configured to serve ("Deploy from a branch").
+  #
+  # This job previously used the Pages *deployment API*
+  # (configure-pages / upload-pages-artifact / deploy-pages). That path
+  # additionally requires Settings → Pages → Source to be "GitHub Actions";
+  # because the repo serves from a branch instead, the `github-pages`
+  # environment could not be resolved and the job failed instantly, before
+  # any step ran (no logs, 0 steps, ~2s). Every push to main since has built
+  # green but never reached the live site, so the site could only be updated
+  # by hand. Pushing the build output to `gh-pages` matches the existing
+  # setting and needs no repository configuration change.
   deploy:
     name: Deploy to GitHub Pages
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: ci
     runs-on: ubuntu-latest
 
+    # Required to push the built site to the gh-pages branch.
     permissions:
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
 
     steps:
       - name: Checkout code
@@ -76,14 +86,11 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      # Publishes dist/ to the gh-pages branch. The action writes a .nojekyll
+      # file by default, so Vite's `assets/` output is served verbatim.
+      - name: Publish to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: dist
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
